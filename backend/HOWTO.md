@@ -75,7 +75,8 @@ Adding another vendor = one new file in `app/llm/` + one `elif` in its
 
 `[agent37]`
 ```bash
-sudo mkdir -p /opt/proactive-tutor-agent && sudo chown $USER /opt/proactive-tutor-agent
+sudo mkdir -p /opt/proactive-tutor-agent
+sudo chown -R "$(id -un):$(id -gn)" /opt/proactive-tutor-agent
 git clone https://github.com/hawoot/proactive-tutor-agent.git /opt/proactive-tutor-agent
 cd /opt/proactive-tutor-agent/backend
 python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
