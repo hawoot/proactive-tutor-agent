@@ -1,0 +1,14 @@
+# /etc/systemd/system/tutor-api.service
+[Unit]
+Description=Tutor API
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/proactive-tutor-agent/backend
+Environment="PATH=/opt/proactive-tutor-agent/backend/.venv/bin"
+EnvironmentFile=/opt/proactive-tutor-agent/backend/.env
+ExecStart=/opt/proactive-tutor-agent/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

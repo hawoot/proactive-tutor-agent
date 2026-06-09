@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Tutor",
+    "slug": "proactive-tutor",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "platforms": ["ios", "android"],
+    "ios": { "supportsTablet": false, "bundleIdentifier": "com.nidhal.proactivetutor" },
+    "android": { "package": "com.nidhal.proactivetutor" },
+    "plugins": ["expo-notifications"]
+  }
+}

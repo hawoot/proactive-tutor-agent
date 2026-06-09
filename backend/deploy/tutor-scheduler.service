@@ -1,0 +1,14 @@
+# /etc/systemd/system/tutor-scheduler.service  (the proactive ticker - keep ONE instance)
+[Unit]
+Description=Tutor Scheduler
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/proactive-tutor-agent/backend
+Environment="PATH=/opt/proactive-tutor-agent/backend/.venv/bin"
+EnvironmentFile=/opt/proactive-tutor-agent/backend/.env
+ExecStart=/opt/proactive-tutor-agent/backend/.venv/bin/python -m app.scheduler
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
