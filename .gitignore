@@ -1,0 +1,10 @@
+# python
+.venv/
+__pycache__/
+*.pyc
+*.db
+.env
+# node / expo
+node_modules/
+.expo/
+dist/
