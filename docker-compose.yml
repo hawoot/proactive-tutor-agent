@@ -1,0 +1,28 @@
+# v1 deployment: two containers (api + scheduler) sharing one SQLite volume.
+#   docker compose up -d --build
+# NOTE: needs a real VM or a container with nesting enabled. If Docker can't run
+# on your host, use backend/deploy/*.service (systemd) instead - see backend/HOWTO.
+services:
+  api:
+    build: ./backend
+    env_file: backend/.env
+    environment:
+      - DATABASE_URL=sqlite:////data/tutor.db
+    volumes:
+      - tutor-data:/data
+    ports:
+      - "8000:8000"          # exposed; reach it at http://VPS_IP:8000
+    restart: unless-stopped
+
+  scheduler:                  # the proactive ticker - exactly one instance
+    build: ./backend
+    env_file: backend/.env
+    environment:
+      - DATABASE_URL=sqlite:////data/tutor.db
+    volumes:
+      - tutor-data:/data
+    command: python -m app.scheduler
+    restart: unless-stopped
+
+volumes:
+  tutor-data:                 # the DB lives here; survives rebuilds

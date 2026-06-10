@@ -19,7 +19,23 @@ from sqlalchemy.orm import (
 )
 from . import config
 
-engine = create_engine(config.DATABASE_URL, echo=False)
+_is_sqlite = config.DATABASE_URL.startswith("sqlite")
+engine = create_engine(
+    config.DATABASE_URL, echo=False,
+    connect_args={"check_same_thread": False} if _is_sqlite else {},
+)
+
+if _is_sqlite:
+    # WAL + busy timeout so the api and scheduler processes can share the file safely.
+    from sqlalchemy import event
+
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(dbapi_connection, _):
+        cur = dbapi_connection.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=5000")
+        cur.close()
+
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 

@@ -1,96 +1,78 @@
 # backend/HOWTO
 
-Commands are tagged with WHERE to run them:
-`[LAPTOP]` = your machine. `[agent37]` = your VPS over SSH. For local-only dev,
-run everything on the laptop and ignore the VPS sections.
+## First: can your VPS run Docker?
 
-## 1. Install & configure
-
-`[LAPTOP or agent37]` - from the repo root:
 ```bash
-cd backend
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-nano .env        # set LLM_PROVIDER / LLM_MODEL / LLM_API_KEY (see section 4)
+systemd-detect-virt    # kvm/qemu = real VM -> Docker path. lxc/openvz = container -> systemd path
 ```
 
-## 2. The database - what "deploying the DB" means here: nothing
+## Path A - Docker (real VM, or container with nesting enabled)
 
-SQLite is not a server. It is **one file** (`tutor.db`) that the app creates by
-itself on first startup, right next to the code. There is nothing to install,
-start, host, or deploy. Back it up by copying the file. Delete it to reset.
-
-When you later have concurrent real users, you swap `DATABASE_URL` to a Postgres
-URL and run a Postgres container - that is the day a DB needs deploying. Not now.
-
-## 3. Run it
-
-`[LAPTOP or agent37]` - terminal 1, the API:
 ```bash
-source .venv/bin/activate
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-(`--host 0.0.0.0` so your phone can reach it on the same Wi-Fi for the mobile app.)
-
-Terminal 2 - seed + smoke test (`/question` skips the scheduling fence, instant):
-```bash
-curl -X POST localhost:8000/seed
-curl -X POST "localhost:8000/question?student_id=1"
-curl -X POST localhost:8000/message -H 'content-type: application/json' \
-     -d '{"student_id":1,"text":"YOUR ANSWER HERE"}'
-curl "localhost:8000/progress?student_id=1"
-```
-A marked answer back = the brain works.
-
-Terminal 3 - the proactive side (the actual product):
-```bash
-source .venv/bin/activate
-python -m app.scheduler     # polls every 60s; prints a nudge to console when due
+git clone https://github.com/hawoot/proactive-tutor-agent.git
+cd proactive-tutor-agent
+cp backend/.env.example backend/.env
+nano backend/.env                  # set LLM_API_KEY
+docker compose up -d --build
 ```
 
-## 4. Switching LLM provider (Anthropic is NOT baked in)
-
-Everything goes through `app/llm/` - the rest of the code only calls `llm.ask()`.
-Pick a provider in `.env`:
-
-```ini
-# Anthropic (default)
-LLM_PROVIDER=anthropic
-LLM_MODEL=claude-sonnet-4-6
-LLM_API_KEY=sk-ant-...
-
-# Any OpenAI-compatible API - OpenAI, DeepSeek, Mistral, local Ollama/vLLM...
-LLM_PROVIDER=openai_compat
-LLM_MODEL=deepseek-chat
-LLM_API_KEY=sk-...
-LLM_BASE_URL=https://api.deepseek.com/v1
-# local Ollama example: LLM_BASE_URL=http://localhost:11434/v1  LLM_API_KEY=ollama
+Day-to-day:
+```bash
+docker compose logs -f scheduler            # watch the nudges
+git pull && docker compose up -d --build    # update
+docker compose down                         # stop (DB survives)
+docker compose down -v                      # stop AND wipe DB
 ```
 
-Adding another vendor = one new file in `app/llm/` + one `elif` in its
-`__init__.py`. Nothing else changes.
+## Path B - systemd (when Docker can't run inside your container)
 
-## 5. Always-on on the VPS (later, when you're done with local dev)
-
-`[agent37]`
 ```bash
-sudo mkdir -p /opt/proactive-tutor-agent
-sudo chown -R "$(id -un):$(id -gn)" /opt/proactive-tutor-agent
+sudo mkdir -p /opt/proactive-tutor-agent && sudo chown $USER /opt/proactive-tutor-agent
 git clone https://github.com/hawoot/proactive-tutor-agent.git /opt/proactive-tutor-agent
 cd /opt/proactive-tutor-agent/backend
-python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
-cp .env.example .env && nano .env
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env && nano .env           # set LLM_API_KEY
 sudo cp deploy/tutor-api.service deploy/tutor-scheduler.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now tutor-api tutor-scheduler
 ```
-Run **exactly one** scheduler instance - two would double-fire every nudge.
-`deploy/nginx.conf` + certbot when you want a public HTTPS domain.
 
-## 6. Updating
+Note: the systemd api unit binds 127.0.0.1. To reach it from your phone, edit
+/etc/systemd/system/tutor-api.service -> change --host 127.0.0.1 to --host 0.0.0.0,
+then: sudo systemctl daemon-reload && sudo systemctl restart tutor-api
+
+Day-to-day:
+```bash
+journalctl -u tutor-scheduler -f            # watch the nudges
+cd /opt/proactive-tutor-agent && git pull && sudo systemctl restart tutor-api tutor-scheduler
+```
+
+## Smoke test (either path)
 
 ```bash
-cd /opt/proactive-tutor-agent && git pull
-sudo systemctl restart tutor-api tutor-scheduler
+curl -X POST localhost:8000/seed
+curl -X POST "localhost:8000/question?student_id=1"
+curl -X POST localhost:8000/message -H 'content-type: application/json' \
+     -d '{"student_id":1,"text":"YOUR ANSWER"}'
 ```
+A marked answer back = it works. From outside: http://VPS_IP:8000
+(open the firewall if needed: sudo ufw allow 8000).
+Note: no auth yet - fine for self-use, add an API key before real users.
+
+## The database
+
+SQLite = one file (Docker: in the tutor-data volume; systemd: backend/tutor.db).
+Auto-created. Nothing to install or deploy. Swap DATABASE_URL to Postgres when
+you have real users.
+
+## Switching LLM provider (Anthropic not baked in)
+
+In backend/.env - everything routes through app/llm/:
+```ini
+LLM_PROVIDER=anthropic           # or: openai_compat (OpenAI, DeepSeek, Ollama...)
+LLM_MODEL=claude-sonnet-4-6
+LLM_API_KEY=...
+LLM_BASE_URL=                    # only for openai_compat, e.g. https://api.deepseek.com/v1
+```
+Then restart (compose up -d / systemctl restart).
