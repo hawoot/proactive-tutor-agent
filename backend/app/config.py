@@ -1,5 +1,21 @@
-"""Configuration, loaded from environment. Self-contained, no framework magic."""
+"""Configuration, loaded from environment (+ backend/.env if present).
+Self-contained .env loader so every run mode (docker, systemd, supervisord,
+bare shell) gets the same config with zero extra dependencies."""
 import os
+from pathlib import Path
+
+
+def _load_dotenv() -> None:
+    p = Path(__file__).resolve().parent.parent / ".env"
+    if p.exists():
+        for line in p.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
+
+
+_load_dotenv()
 
 # LLM (provider-agnostic - see app/llm/)
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic")
