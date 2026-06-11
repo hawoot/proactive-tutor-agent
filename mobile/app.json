@@ -2,7 +2,8 @@
   "expo": {
     "name": "Tutor",
     "slug": "proactive-tutor",
-    "version": "2.1.0",
+    "version": "2.1.1",
+    "newArchEnabled": false,
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
