@@ -97,6 +97,31 @@ def main() -> None:
     skills = api("GET", f"/programs/{pid}/skills")
     print(f"program {pid} now has {len(skills)} skills")
 
+    # question bank, if the curriculum ships one (module: <name>_questions)
+    try:
+        qmod = importlib.import_module(f"app.curricula.{args.module}_questions")
+    except ModuleNotFoundError:
+        return
+    qstats = {"questions+": 0, "questions~": 0, "skills_missing": 0}
+    by_name = {s["name"]: s for s in skills}
+    for skill_name, qs in qmod.QUESTIONS.items():
+        skill = by_name.get(skill_name)
+        if not skill:
+            qstats["skills_missing"] += 1
+            print(f"  ! no skill named {skill_name!r} - skipped {len(qs)} questions")
+            continue
+        existing = {q["position"]: q for q in api(
+            "GET", f"/skills/{skill['id']}/questions")}
+        for pos, q in enumerate(qs):
+            if pos in existing:
+                api("PATCH", f"/questions/{existing[pos]['id']}", json={**q, "position": pos})
+                qstats["questions~"] += 1
+            else:
+                api("POST", "/questions", json={
+                    "skill_id": skill["id"], "position": pos, **q})
+                qstats["questions+"] += 1
+    print(f"question bank: {qstats}")
+
 
 if __name__ == "__main__":
     main()

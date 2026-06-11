@@ -7,11 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 from ..db import get_db
-from ..models import Program, Unit, Skill, Enrollment
+from ..models import Program, Unit, Skill, Question, Enrollment
 from ..schemas import (
     ProgramCreate, ProgramUpdate, ProgramOut,
     UnitCreate, UnitUpdate, UnitNode,
     SkillCreate, SkillUpdate, SkillOut,
+    QuestionCreate, QuestionUpdate, QuestionOut,
 )
 
 router = APIRouter(tags=["library"])
@@ -243,5 +244,55 @@ def delete_skill(skill_id: int, user_id: int | None = None,
         raise HTTPException(404, "Unknown skill")
     check_can_edit(skill.program, user_id)
     db.delete(skill)  # cascades skill_states; attempts keep history (skill_id null)
+    db.commit()
+    return {"ok": True}
+
+
+# --- question bank (curated questions + canonical answers per skill) ----------
+
+@router.get("/skills/{skill_id}/questions", response_model=list[QuestionOut])
+def list_questions(skill_id: int, db: Session = Depends(get_db)):
+    if not db.get(Skill, skill_id):
+        raise HTTPException(404, "Unknown skill")
+    return db.execute(
+        select(Question).where(Question.skill_id == skill_id)
+        .order_by(Question.position, Question.id)
+    ).scalars().all()
+
+
+@router.post("/questions", response_model=QuestionOut)
+def create_question(body: QuestionCreate, user_id: int | None = None,
+                    db: Session = Depends(get_db)):
+    skill = db.get(Skill, body.skill_id)
+    if not skill:
+        raise HTTPException(404, "Unknown skill")
+    check_can_edit(skill.program, user_id)
+    q = Question(**body.model_dump())
+    db.add(q)
+    db.commit()
+    return QuestionOut.model_validate(q)
+
+
+@router.patch("/questions/{question_id}", response_model=QuestionOut)
+def update_question(question_id: int, body: QuestionUpdate,
+                    user_id: int | None = None, db: Session = Depends(get_db)):
+    q = db.get(Question, question_id)
+    if not q:
+        raise HTTPException(404, "Unknown question")
+    check_can_edit(q.skill.program, user_id)
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(q, field, value)
+    db.commit()
+    return QuestionOut.model_validate(q)
+
+
+@router.delete("/questions/{question_id}")
+def delete_question(question_id: int, user_id: int | None = None,
+                    db: Session = Depends(get_db)):
+    q = db.get(Question, question_id)
+    if not q:
+        raise HTTPException(404, "Unknown question")
+    check_can_edit(q.skill.program, user_id)
+    db.delete(q)  # attempts keep their copy of the text (question_id -> NULL)
     db.commit()
     return {"ok": True}

@@ -77,6 +77,8 @@ export default function TodayScreen() {
             <View style={s.row}>
               {attempt.skill_name ? <Tag text={attempt.skill_name} color={colors.shared} /> : null}
               <Tag text={attempt.source === 'scheduled' ? 'nudged' : 'on demand'} />
+              <Tag text={attempt.from_bank ? 'curated' : 'generated'}
+                color={attempt.from_bank ? colors.good : colors.personal} />
             </View>
             <Card><Text style={s.question}>{attempt.question}</Text></Card>
             <Field value={answer} onChangeText={setAnswer} placeholder="Your answer…" multiline />

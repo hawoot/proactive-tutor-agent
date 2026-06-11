@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 SelectionStrategy = Literal["due_then_weakest", "due_then_unseen", "round_robin"]
 MarkingStrictness = Literal["strict", "balanced", "lenient"]
 QuestionStyle = Literal["plain", "latex"]
+QuestionSource = Literal["bank_first", "bank_only", "generate_only"]
 
 
 class ORM(BaseModel):
@@ -190,6 +191,7 @@ class EnrollmentUpdate(BaseModel):
     repeat_cooldown_hours: float | None = Field(None, ge=0, le=168)
     marking_strictness: MarkingStrictness | None = None
     question_style: QuestionStyle | None = None
+    question_source: QuestionSource | None = None
 
 
 class EnrollmentOut(ORM):
@@ -202,6 +204,7 @@ class EnrollmentOut(ORM):
     repeat_cooldown_hours: float
     marking_strictness: str
     question_style: str
+    question_source: str
     program_title: str = ""
 
 
@@ -230,3 +233,32 @@ class AttemptOut(ORM):
     asked_at: datetime
     answered_at: datetime | None
     skill_name: str = ""
+    from_bank: bool = False  # True = curated bank question; False = LLM-generated
+
+
+# --- question bank ----------------------------------------------------------------
+
+class QuestionCreate(BaseModel):
+    skill_id: int
+    text: str
+    answer: str = ""
+    commentary: str = ""
+    position: int = 0
+    source: str = "curated"
+
+
+class QuestionUpdate(BaseModel):
+    text: str | None = None
+    answer: str | None = None
+    commentary: str | None = None
+    position: int | None = None
+
+
+class QuestionOut(ORM):
+    id: int
+    skill_id: int
+    position: int
+    text: str
+    answer: str
+    commentary: str
+    source: str
