@@ -3,5 +3,8 @@ WORKDIR /srv
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini .
 EXPOSE 8000
+# Migrations run automatically on startup; scheduler runs embedded by default.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

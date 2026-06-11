@@ -7,29 +7,69 @@ plus curated unit-tree material. The agent chases the learner.
 ## Repo map
 
 ```
-backend/   FastAPI + SQLite + scheduler + provider-agnostic LLM   -> backend/HOWTO.md
-mobile/    Expo (React Native) app, iOS + Android, push-ready     -> mobile/HOWTO.md
+backend/   FastAPI + SQLAlchemy + Alembic + scheduler + swappable LLM   -> backend/HOWTO.md
+mobile/    Expo (React Native) app: practice, library CRUD, progress    -> mobile/HOWTO.md
+deploy/    container.sh (bare-container deploy) + AGENT_PROMPT.md
 ```
 
 Each half is independent: the backend runs and is testable with curl alone; the
 mobile app is a thin client over the backend's HTTP API.
 
+## The data model (the bread and butter)
+
+Two segregated domains, linked only through enrollments:
+
+```
+CONTENT (shareable library)              PERSONAL (one learner's world)
+  Program  ── owner_id NULL = shared       User          prefs: timezone, quiet hours, caps
+    └── Unit (recursive tree, material)    Device        push token / telegram / console
+    └── Skill (atomic, masterable)         Enrollment ── user <-> program + exam date
+                                             └── SkillState  score, attempts, due_at (spaced rep)
+                                           Attempt       append-only Q/A log
+                                           Note          private annotation on shared content
+                                           NotificationLog  every nudge sent (powers daily cap)
+```
+
+- **Personal vs shared in one column**: `Program.owner_id` NULL = in the library
+  for everyone; set = private to that user. Units/skills inherit it. "Fork" shared
+  content with one call (`POST /programs/{id}/clone`).
+- **Enrichment is automatic**: add a skill to a program and every enrolled learner
+  picks it up (SkillState rows are created lazily on selection).
+- **Schema evolution is managed**: Alembic migrations run automatically on startup.
+  `git pull && restart` is the whole upgrade. SQLite today, Postgres later via one
+  env var.
+
 ## Architecture in one breath
 
 - **Engine vs curriculum**: the engine (memory, scheduling, mastery, delivery) is
-  invariant; a subject is just data (a `program` + skill graph + unit tree).
+  invariant; a subject is just data (a `Program` + unit tree + skills).
 - **LLM vs state**: the LLM is a swappable brain behind `backend/app/llm/`
-  (Anthropic, OpenAI, DeepSeek, local - one env switch). The tutor that "grows"
-  is the accumulated state in the DB, never a process or a model.
-- **Stateless workers, stateful system**: every trigger loads state -> acts -> persists.
-- **Deterministic core, LLM at the edges**: the scheduler (ticker -> fence -> decide ->
-  phrase -> notify) is owned, tunable code; the LLM only phrases and marks.
-- **Channel-agnostic**: notifications go through a `Notifier` interface
-  (Console / Telegram / Expo push); inbound transports normalise to one event.
+  (Anthropic, OpenAI-compatible, or `fake` for offline dev - one env switch). The
+  tutor that "grows" is the accumulated state in the DB, never a process or model.
+- **Deterministic core, LLM at the edges**: the scheduler (ticker -> fence ->
+  decide -> phrase -> notify) is owned, tunable code; the LLM only phrases and marks.
+- **One process by default**: the scheduler runs embedded in the API process
+  (`SCHEDULER_MODE=embedded`), so the whole backend deploys as a single process -
+  perfect for a bare container. Flip to `off` + run `python -m app.scheduler`
+  when you split services later (see `docker-compose.split.yml`).
+- **Channel-agnostic**: nudges go through a `Notifier` interface (Console /
+  Telegram / Expo push) and every send is logged.
+
+## Quick start (dev, no API key needed)
+
+```bash
+cd backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+LLM_PROVIDER=fake uvicorn app.main:app --reload   # migrations run automatically
+curl -X POST localhost:8000/seed
+```
+
+Tests: `python -m pytest tests/ -q` (full API loop on a throwaway DB, no network).
 
 ## Phases
 
-0. (now) backend + one program, self-use; mobile v0 talking to it on your LAN/VPS
+0. (now) backend + one program, self-use; mobile v2 talking to it
 1. real push via a dev build; public-domain content (Gutenberg-safe)
 2. payments, more programs
 3. (maybe) third-party publishing; buy-your-own-copy uploads

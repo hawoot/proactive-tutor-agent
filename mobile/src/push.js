@@ -1,5 +1,5 @@
 // Registers this device for push and hands the Expo token to the backend.
-// In Expo Go this works only partially (see HOWTO section 5); a dev build gets real push.
+// In Expo Go this works only partially (Android: unsupported); a dev build gets real push.
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { api, getConfig } from './api';
@@ -24,8 +24,8 @@ export async function registerForPush() {
 
   try {
     const token = (await Notifications.getExpoPushTokenAsync()).data;
-    const { studentId } = await getConfig();
-    await api.registerDevice(studentId, token);
+    const { userId } = await getConfig();
+    await api.registerDevice(userId, 'push', token, Device.deviceName || 'phone');
     return { ok: true, msg: 'Push registered - nudges will arrive on this phone.' };
   } catch (e) {
     return { ok: false, msg: `Token/registration failed: ${e.message}` };
