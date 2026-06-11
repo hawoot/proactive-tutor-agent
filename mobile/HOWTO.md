@@ -56,23 +56,32 @@ In the app, go to the **Settings** tab:
 - **Settings** - connection, push registration, and your tutor preferences:
   timezone, quiet hours (no nudges then), max nudges per day.
 
-## 4. Push notifications (the "proactive" part on your phone)
+## 4. The installed app (EAS) - no laptop, works anywhere
 
-Inside Expo Go push is limited (Android: unsupported). For real push, build a
-development version of the app once:
+Expo Go + laptop is only the *development* loop. The real app is built once in
+Expo's cloud (EAS), installed on the phone like any normal app, and from then
+on updates itself.
 
-```bash
-npm i -g eas-cli
-eas login                 # free Expo account
-eas build --profile development --platform android   # or: ios
-```
+The project is already wired (`eas.json`, `expo-updates`, projectId in
+`app.json`, the `EAS Update` GitHub Action). The flows:
 
-Install the build from the link Expo gives you, reopen the app, then in
-**Settings** tap **Enable push notifications**. The backend is already wired -
-scheduled nudges now arrive as real notifications.
+- **First install / native changes** (rare - new native packages, SDK upgrades):
+  ```bash
+  cd mobile
+  EXPO_TOKEN=<expo.dev access token> npx eas-cli build --platform android --profile preview
+  ```
+  ~15 min in Expo's cloud -> APK download link (also on the expo.dev dashboard)
+  -> open on the phone -> install.
 
-Until then, nudges still happen - you see them as the open question on the
-Today tab (and in the backend logs).
+- **JS/UI changes** (everything else): nothing to do. Every push to `main`
+  touching `mobile/` triggers the GitHub Action, which publishes an
+  over-the-air update; the installed app applies it on next launch.
+  (Manual equivalent: `eas update --branch preview --message "..."`.)
+
+Push notifications work in the installed app: open **Settings** -> **Enable
+push notifications**. The backend is already wired - scheduled nudges arrive
+as real notifications. Inside Expo Go push is limited (Android: unsupported);
+nudges still happen there - you see them as the open question on the Today tab.
 
 ## 5. Where things live
 
