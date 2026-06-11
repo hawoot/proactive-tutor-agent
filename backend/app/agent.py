@@ -157,8 +157,16 @@ def generate_question(db: Session, user: User, skill: Skill,
 {ctx.session}
 Effort budget: {skill.effort} ({'phone-only, short' if skill.effort == 'quick' else 'paper/keyboard ok'}).
 {style}
-Output ONLY the question."""
-    return llm.ask(prompt, max_tokens=400)
+End your reply with the final question on its own line, prefixed exactly with:
+QUESTION: """
+    text = llm.ask(prompt, max_tokens=600)
+    # Robust extraction: some models prepend reasoning despite instructions.
+    # Take everything after the LAST 'QUESTION:' marker; fall back to the
+    # last non-empty paragraph if the marker is missing.
+    if "QUESTION:" in text:
+        return text.rsplit("QUESTION:", 1)[1].strip()
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    return paragraphs[-1] if paragraphs else text.strip()
 
 
 def mark_answer(question: str, answer: str, strictness: str = "balanced") -> tuple[str, str]:

@@ -7,4 +7,6 @@ class FakeProvider(LLMProvider):
     def ask(self, prompt: str, max_tokens: int = 500) -> str:
         if "VERDICT" in prompt:  # marking prompt
             return "VERDICT: correct\nFEEDBACK: (fake provider) Marked correct for testing."
+        if "QUESTION:" in prompt:  # generation prompt - exercise the reasoning-strip parser
+            return "Some models ramble first.\n\nQUESTION: (fake provider) What is 2 + 2?"
         return "(fake provider) Practice question: what is 2 + 2?"
