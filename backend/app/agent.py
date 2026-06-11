@@ -9,10 +9,10 @@ SELECTION_STRATEGIES registry - adding one = one function + one entry here,
 plus its name in schemas.SelectionStrategy so the API accepts it.
 """
 from datetime import datetime, timedelta
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from . import llm
-from .models import utcnow, User, Enrollment, Skill, SkillState, Attempt
+from .models import utcnow, User, Enrollment, Skill, SkillState, Attempt, Question
 from .retrieval import ContextRetriever, maybe_update_profile
 
 
@@ -169,11 +169,20 @@ QUESTION: """
     return paragraphs[-1] if paragraphs else text.strip()
 
 
-def mark_answer(question: str, answer: str, strictness: str = "balanced") -> tuple[str, str]:
-    """Returns (verdict, feedback) where verdict is correct|partial|wrong."""
+def mark_answer(question: str, answer: str, strictness: str = "balanced",
+                model_answer: str = "", commentary: str = "") -> tuple[str, str]:
+    """Returns (verdict, feedback) where verdict is correct|partial|wrong.
+    For bank questions, the canonical answer turns marking from 'solve it
+    yourself' into 'compare against this solution' - far more reliable."""
     rubric = MARKING_RUBRICS.get(strictness, MARKING_RUBRICS["balanced"])
+    trusted = ""
+    if model_answer:
+        trusted = (f"\nModel solution (trusted - judge the student against THIS, "
+                   f"accepting mathematically equivalent forms):\n{model_answer}\n")
+        if commentary:
+            trusted += f"Marking guidance: {commentary}\n"
     text = llm.ask(
-        f"""Mark this answer. Question: {question}\nAnswer: {answer}\n
+        f"""Mark this answer. Question: {question}\nAnswer: {answer}\n{trusted}
 Rubric: {rubric}
 Reply EXACTLY in this format:\nVERDICT: correct | partial | wrong\nFEEDBACK: <=3 sentences.""",
         max_tokens=400,
@@ -211,19 +220,50 @@ def open_attempt(db: Session, user_id: int) -> Attempt | None:
     ).scalars().first()
 
 
+def pick_bank_question(db: Session, user_id: int, skill_id: int) -> Question | None:
+    """Least-recently-served-to-this-user first (never-served wins)."""
+    qs = db.execute(
+        select(Question).where(Question.skill_id == skill_id)
+        .order_by(Question.position, Question.id)
+    ).scalars().all()
+    if not qs:
+        return None
+    last_served = dict(db.execute(
+        select(Attempt.question_id, func.max(Attempt.asked_at))
+        .where(Attempt.user_id == user_id,
+               Attempt.question_id.in_([q.id for q in qs]))
+        .group_by(Attempt.question_id)
+    ).all())
+    qs.sort(key=lambda q: (last_served.get(q.id) or datetime.min, q.position))
+    return qs[0]
+
+
 def ask_question(db: Session, user: User, enrollments: list[Enrollment],
                  source: str, effort: str | None = None) -> Attempt | None:
-    """Pick a skill, phrase a question, persist the open attempt.
+    """Pick a skill, then source the question per the enrollment's
+    question_source policy: bank_first (curated, fall back to generation),
+    bank_only (trusted set only), generate_only (always creative).
     Scheduled asks respect the repeat cooldown; on-demand asks always deliver."""
     picked = pick_skill(db, enrollments, effort=effort,
                         respect_cooldown=(source == "scheduled"))
     if not picked:
         return None
     skill, _state, enr = picked
-    question = generate_question(db, user, skill, enrollment=enr)
+
+    policy = enr.question_source
+    bank_q = None
+    if policy in ("bank_first", "bank_only"):
+        bank_q = pick_bank_question(db, user.id, skill.id)
+    if bank_q:
+        question, question_id = bank_q.text, bank_q.id
+    elif policy == "bank_only":
+        return None  # trusted set is empty for every pickable skill's turn
+    else:
+        question, question_id = generate_question(db, user, skill, enrollment=enr), None
+
     attempt = Attempt(
         user_id=user.id, enrollment_id=enr.id, skill_id=skill.id,
-        source=source, question=question,
+        question_id=question_id, source=source, question=question,
     )
     db.add(attempt)
     db.flush()
@@ -234,9 +274,12 @@ def handle_answer(db: Session, attempt: Attempt, answer: str) -> Attempt:
     """Mark the answer, close the attempt, update the adaptive state and
     (periodically) the semantic memory."""
     enr = db.get(Enrollment, attempt.enrollment_id) if attempt.enrollment_id else None
+    bank_q = db.get(Question, attempt.question_id) if attempt.question_id else None
     verdict, feedback = mark_answer(
         attempt.question, answer,
-        strictness=enr.marking_strictness if enr else "balanced")
+        strictness=enr.marking_strictness if enr else "balanced",
+        model_answer=bank_q.answer if bank_q else "",
+        commentary=bank_q.commentary if bank_q else "")
     attempt.answer = answer
     attempt.verdict = verdict
     attempt.feedback = feedback

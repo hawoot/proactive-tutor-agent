@@ -56,6 +56,7 @@ def attempts(user_id: int, limit: int = 50, db: Session = Depends(get_db)):
     for a in rows:
         item = AttemptOut.model_validate(a)
         item.skill_name = a.skill.name if a.skill else ""
+        item.from_bank = a.question_id is not None
         out.append(item)
     return out
 

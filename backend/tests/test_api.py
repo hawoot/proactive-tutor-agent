@@ -70,9 +70,28 @@ def test_everything():
         assert c.patch(f"/enrollments/{enr2['id']}", json={
             "repeat_cooldown_hours": 999}, headers=H).status_code == 422
 
-        # practice loop (fake LLM): ask -> no stacking -> answer -> mastery moves
-        q = c.post("/practice/question", json={"user_id": 1}, headers=H).json()
+        # question bank: CRUD, then bank-first serving with canonical marking
+        qb = c.post("/questions?user_id=1", json={
+            "skill_id": s["id"], "text": "What is 1 + 1?", "answer": "2",
+            "commentary": "binary"}, headers=H).json()
+        assert c.get(f"/skills/{s['id']}/questions", headers=H).json()[0]["answer"] == "2"
+        assert c.patch(f"/questions/{qb['id']}?user_id=1", json={"answer": "two"},
+                       headers=H).json()["answer"] == "two"
+
+        # practice loop: bank_first serves the curated question (no stacking),
+        # fake-LLM marking closes it and mastery moves
+        q = c.post("/practice/question", json={"user_id": 1, "enrollment_id": enr2["id"]},
+                   headers=H).json()
+        assert q["from_bank"] and q["question"] == "What is 1 + 1?"
         assert c.post("/practice/question", json={"user_id": 1}, headers=H).json()["id"] == q["id"]
+        a = c.post("/practice/answer", json={"user_id": 1, "text": "2"}, headers=H).json()
+        assert a["verdict"] == "correct"
+
+        # generate_only flips back to creative questions (reasoning stripped by the parser)
+        c.patch(f"/enrollments/{enr2['id']}", json={"question_source": "generate_only"}, headers=H)
+        q2 = c.post("/practice/question", json={"user_id": 1, "enrollment_id": enr2["id"]},
+                    headers=H).json()
+        assert not q2["from_bank"] and q2["question"] == "(fake provider) What is 2 + 2?"
         a = c.post("/practice/answer", json={"user_id": 1, "text": "4"}, headers=H).json()
         assert a["verdict"] == "correct"
         prog = c.get("/progress?user_id=1", headers=H).json()["enrollments"]

@@ -106,6 +106,26 @@ class Skill(Base):
 
     program: Mapped[Program] = relationship(back_populates="skills")
     unit: Mapped[Unit | None] = relationship(back_populates="skills")
+    questions: Mapped[list["Question"]] = relationship(
+        back_populates="skill", cascade="all, delete-orphan", passive_deletes=True)
+
+
+class Question(Base):
+    """A curated bank question: trusted text + canonical answer + marking
+    commentary. Practice can draw from the bank instead of (or before)
+    LLM generation - see Enrollment.question_source."""
+    __tablename__ = "questions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    skill_id: Mapped[int] = mapped_column(
+        ForeignKey("skills.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    text: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text, default="")      # canonical worked answer
+    commentary: Mapped[str] = mapped_column(Text, default="")  # marking guidance (what earns partial etc.)
+    source: Mapped[str] = mapped_column(String(20), default="curated")  # curated | generated
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    skill: Mapped[Skill] = relationship(back_populates="questions")
 
 
 # =========================== PERSONAL domain ===============================
@@ -169,6 +189,8 @@ class Enrollment(Base):
         String(20), default="balanced")          # strict | balanced | lenient
     question_style: Mapped[str] = mapped_column(
         String(20), default="plain")             # plain (phone-friendly) | latex
+    question_source: Mapped[str] = mapped_column(
+        String(20), default="bank_first")        # bank_first | bank_only | generate_only
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     user: Mapped[User] = relationship(back_populates="enrollments")
@@ -212,6 +234,8 @@ class Attempt(Base):
         ForeignKey("enrollments.id", ondelete="SET NULL"), nullable=True)
     skill_id: Mapped[int | None] = mapped_column(
         ForeignKey("skills.id", ondelete="SET NULL"), nullable=True)
+    question_id: Mapped[int | None] = mapped_column(
+        ForeignKey("questions.id", ondelete="SET NULL"), nullable=True)  # set = served from the bank
     source: Mapped[str] = mapped_column(String(20), default="on_demand")  # scheduled | on_demand
     question: Mapped[str] = mapped_column(Text, default="")
     answer: Mapped[str] = mapped_column(Text, default="")

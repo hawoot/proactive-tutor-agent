@@ -415,6 +415,7 @@ function PolicyEditor({ visible, enrollment, onClose, onSaved }) {
       selection_strategy: enrollment.selection_strategy,
       marking_strictness: enrollment.marking_strictness,
       question_style: enrollment.question_style,
+      question_source: enrollment.question_source,
     });
     setCooldown(String(enrollment.repeat_cooldown_hours ?? 6));
     api.policies().then(setMeta).catch((e) => setErr(e.message));
@@ -448,6 +449,7 @@ function PolicyEditor({ visible, enrollment, onClose, onSaved }) {
   return (
     <Sheet visible={visible} title="Tutor policy" onClose={onClose}>
       <ErrorText>{err}</ErrorText>
+      {toggle('question_source', 'Question source')}
       {toggle('selection_strategy', 'Skill selection')}
       {toggle('marking_strictness', 'Marking strictness')}
       {toggle('question_style', 'Question style')}

@@ -1,9 +1,9 @@
-"""Demo seed: the full shared A-level Maths curriculum (app/curricula/) +
-one enrolled user. Idempotent - safe to call twice."""
+"""Demo seed: the full shared A-level Maths curriculum + curated question
+bank (app/curricula/) + one enrolled user. Idempotent - safe to call twice."""
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from .models import Program, Unit, Skill, User, Enrollment
-from .curricula import alevel_maths_uk
+from .models import Program, Unit, Skill, Question, User, Enrollment
+from .curricula import alevel_maths_uk, alevel_maths_uk_questions
 
 
 def _create_tree(db: Session, program_id: int, nodes, parent_id=None) -> None:
@@ -13,7 +13,12 @@ def _create_tree(db: Session, program_id: int, nodes, parent_id=None) -> None:
         db.add(unit)
         db.flush()
         for spos, sk in enumerate(node.get("skills", [])):
-            db.add(Skill(program_id=program_id, unit_id=unit.id, position=spos, **sk))
+            skill = Skill(program_id=program_id, unit_id=unit.id, position=spos, **sk)
+            db.add(skill)
+            db.flush()
+            for qpos, q in enumerate(
+                    alevel_maths_uk_questions.QUESTIONS.get(sk["name"], [])):
+                db.add(Question(skill_id=skill.id, position=qpos, **q))
         _create_tree(db, program_id, node.get("children", []), unit.id)
 
 

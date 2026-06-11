@@ -79,6 +79,12 @@ def policies():
             "default": "plain",
             "description": "plain = phone-friendly notation; latex = allow LaTeX.",
         },
+        "question_source": {
+            "options": ["bank_first", "bank_only", "generate_only"],
+            "default": "bank_first",
+            "description": "bank first = curated questions, generate as fallback; "
+                           "bank only = trusted set only; generate only = always creative.",
+        },
         "repeat_cooldown_hours": {
             "min": 0, "max": 168, "default": 6,
             "description": "Hours before the same skill can be drilled again (unless due for review).",

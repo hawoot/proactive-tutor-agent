@@ -13,6 +13,7 @@ router = APIRouter(prefix="/practice", tags=["practice"])
 def _out(attempt: Attempt) -> AttemptOut:
     item = AttemptOut.model_validate(attempt)
     item.skill_name = attempt.skill.name if attempt.skill else ""
+    item.from_bank = attempt.question_id is not None
     return item
 
 
@@ -42,7 +43,10 @@ def new_question(body: QuestionRequest, db: Session = Depends(get_db)):
     attempt = agent.ask_question(db, user, enrollments, source="on_demand",
                                  effort=body.effort)
     if not attempt:
-        raise HTTPException(400, "No skills in the enrolled program(s) yet")
+        raise HTTPException(400, (
+            "No question available: either the program(s) have no skills yet, "
+            "or the policy is bank_only and the question bank is empty for the "
+            "chosen skill - add questions or switch question_source."))
     db.commit()
     return _out(attempt)
 
