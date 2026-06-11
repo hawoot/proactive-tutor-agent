@@ -1,92 +1,167 @@
 """
 The agent loop. Stateless: every function loads what it needs, acts, persists.
-The LLM phrases and judges; deterministic code owns the mastery update.
+The LLM phrases and judges; deterministic code owns selection and the mastery
+update.
 """
 from datetime import datetime, timedelta
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 from . import llm
-from .db import SessionLocal, Student, Enrollment, Skill, Mastery, Interaction
+from .models import (
+    utcnow, User, Enrollment, Skill, SkillState, Attempt, Unit,
+)
 
 
-# --- deterministic mastery update (NOT the LLM's job) ---------------------
+# --- deterministic mastery update (NOT the LLM's job) ----------------------
 
-def update_mastery(m: Mastery, correct: bool) -> None:
-    """Elo-ish nudge + spaced-repetition interval. Tune freely; it's your moat."""
-    target = 1.0 if correct else 0.0
-    m.score += 0.3 * (target - m.score)          # EMA toward outcome
-    m.attempts += 1
-    m.interval_hours = m.interval_hours * 2 if correct else max(6.0, m.interval_hours / 2)
-    m.last_seen = datetime.utcnow()
-    m.due_at = m.last_seen + timedelta(hours=m.interval_hours)
+VERDICT_TARGET = {"correct": 1.0, "partial": 0.5, "wrong": 0.0}
 
 
-# --- the two LLM-backed actions -------------------------------------------
+def update_skill_state(st: SkillState, verdict: str) -> None:
+    """EMA toward the outcome + spaced-repetition interval. Tune freely."""
+    target = VERDICT_TARGET.get(verdict, 0.0)
+    st.score += 0.3 * (target - st.score)
+    st.attempts += 1
+    if verdict == "correct":
+        st.correct += 1
+        st.interval_hours = st.interval_hours * 2
+    elif verdict == "partial":
+        st.interval_hours = max(6.0, st.interval_hours)
+    else:
+        st.interval_hours = max(6.0, st.interval_hours / 2)
+    st.last_seen_at = utcnow()
+    st.due_at = st.last_seen_at + timedelta(hours=st.interval_hours)
 
-def generate_question(student: Student, skill: Skill) -> str:
+
+# --- skill selection ----------------------------------------------------------
+
+def ensure_skill_states(db: Session, enrollment: Enrollment) -> None:
+    """Lazily create SkillState rows for any program skill the enrollment is
+    missing - this is how newly authored skills reach existing learners."""
+    have = {
+        sid for (sid,) in db.execute(
+            select(SkillState.skill_id).where(SkillState.enrollment_id == enrollment.id)
+        )
+    }
+    missing = db.execute(
+        select(Skill.id).where(
+            Skill.program_id == enrollment.program_id, Skill.id.not_in(have))
+    ).scalars().all()
+    for sid in missing:
+        db.add(SkillState(enrollment_id=enrollment.id, skill_id=sid))
+    if missing:
+        db.flush()
+
+
+def pick_skill(db: Session, enrollments: list[Enrollment],
+               effort: str | None = None) -> tuple[Skill, SkillState, Enrollment] | None:
+    """Due-for-review first, then weakest, across the given enrollments."""
+    candidates: list[tuple[Skill, SkillState, Enrollment]] = []
+    for enr in enrollments:
+        ensure_skill_states(db, enr)
+        q = (
+            select(Skill, SkillState)
+            .join(SkillState, SkillState.skill_id == Skill.id)
+            .where(SkillState.enrollment_id == enr.id)
+        )
+        if effort:
+            q = q.where(Skill.effort == effort)
+        candidates += [(s, st, enr) for s, st in db.execute(q).all()]
+    if not candidates:
+        return None
+    now = utcnow()
+    candidates.sort(key=lambda c: (not (c[1].due_at and c[1].due_at <= now), c[1].score))
+    return candidates[0]
+
+
+# --- the two LLM-backed actions ----------------------------------------------
+
+def generate_question(db: Session, user: User, skill: Skill) -> str:
+    unit_context = ""
+    if skill.unit_id:
+        unit = db.get(Unit, skill.unit_id)
+        if unit and unit.content:
+            unit_context = f"Source material (stay within it):\n{unit.content[:2000]}\n"
     prompt = f"""Set ONE {skill.question_type} question on "{skill.name}".
-Learner profile: {student.profile_note or 'unknown'}
+{f'Skill notes: {skill.description}' if skill.description else ''}
+{unit_context}Learner profile: {user.profile_note or 'unknown'}
 Effort budget: {skill.effort} ({'phone-only, short' if skill.effort == 'quick' else 'paper/keyboard ok'}).
 Output ONLY the question."""
     return llm.ask(prompt, max_tokens=400)
 
 
-def mark_answer(question: str, answer: str) -> tuple[bool, str]:
+def mark_answer(question: str, answer: str) -> tuple[str, str]:
+    """Returns (verdict, feedback) where verdict is correct|partial|wrong."""
     text = llm.ask(
         f"""Mark this answer. Question: {question}\nAnswer: {answer}\n
-Reply EXACTLY:\nVERDICT: correct | partial | wrong\nFEEDBACK: <=3 sentences.""",
+Reply EXACTLY in this format:\nVERDICT: correct | partial | wrong\nFEEDBACK: <=3 sentences.""",
         max_tokens=400,
     )
-    verdict = text.lower().split("feedback")[0]
-    correct = "correct" in verdict and "incorrect" not in verdict
-    return correct, text
+    verdict = "wrong"
+    feedback = text
+    for line in text.splitlines():
+        low = line.lower()
+        if low.startswith("verdict"):
+            if "partial" in low:
+                verdict = "partial"
+            elif "incorrect" in low or "wrong" in low:
+                verdict = "wrong"
+            elif "correct" in low:
+                verdict = "correct"
+        elif low.startswith("feedback"):
+            feedback = line.split(":", 1)[-1].strip() or text
+    return verdict, feedback
 
 
-# --- pick what to drill next (used by the scheduler) ----------------------
+# --- the full ask/answer flows (shared by API and scheduler) -------------------
 
-def pick_skill(db, enrollment: Enrollment, effort: str | None = None):
-    """Due-for-review first, else weakest. Optionally filter by effort (mode)."""
-    q = (
-        select(Skill, Mastery)
-        .join(Mastery, Mastery.skill_id == Skill.id)
-        .where(Mastery.enrollment_id == enrollment.id)
-    )
-    if effort:
-        q = q.where(Skill.effort == effort)
-    rows = db.execute(q).all()
-    if not rows:
+def active_enrollments(db: Session, user_id: int) -> list[Enrollment]:
+    return list(db.execute(
+        select(Enrollment).where(
+            Enrollment.user_id == user_id, Enrollment.status == "active")
+    ).scalars())
+
+
+def open_attempt(db: Session, user_id: int) -> Attempt | None:
+    return db.execute(
+        select(Attempt)
+        .where(Attempt.user_id == user_id, Attempt.verdict == "")
+        .order_by(Attempt.asked_at.desc())
+    ).scalars().first()
+
+
+def ask_question(db: Session, user: User, enrollments: list[Enrollment],
+                 source: str, effort: str | None = None) -> Attempt | None:
+    """Pick a skill, phrase a question, persist the open attempt."""
+    picked = pick_skill(db, enrollments, effort=effort)
+    if not picked:
         return None
-    now = datetime.utcnow()
-    rows.sort(key=lambda r: (not (r[1].due_at and r[1].due_at <= now), r[1].score))
-    return rows[0]
+    skill, _state, enr = picked
+    question = generate_question(db, user, skill)
+    attempt = Attempt(
+        user_id=user.id, enrollment_id=enr.id, skill_id=skill.id,
+        source=source, question=question,
+    )
+    db.add(attempt)
+    db.flush()
+    return attempt
 
 
-# --- inbound: the learner replied -----------------------------------------
+def handle_answer(db: Session, attempt: Attempt, answer: str) -> Attempt:
+    """Mark the answer, close the attempt, update the adaptive state."""
+    verdict, feedback = mark_answer(attempt.question, answer)
+    attempt.answer = answer
+    attempt.verdict = verdict
+    attempt.feedback = feedback
+    attempt.answered_at = utcnow()
 
-def handle_answer(student_id: int, answer: str) -> str:
-    with SessionLocal() as db:
-        last = db.execute(
-            select(Interaction)
-            .where(Interaction.student_id == student_id, Interaction.verdict == "")
-            .order_by(Interaction.ts.desc())
+    if attempt.skill_id and attempt.enrollment_id:
+        st = db.execute(
+            select(SkillState).where(
+                SkillState.enrollment_id == attempt.enrollment_id,
+                SkillState.skill_id == attempt.skill_id,
+            )
         ).scalars().first()
-        if not last:
-            return "No open question. Ask for one first."
-
-        correct, feedback = mark_answer(last.question, answer)
-        last.answer, last.verdict = answer, "correct" if correct else "missed"
-
-        if last.skill_id and not last.self_directed:
-            enr = db.execute(
-                select(Enrollment).where(Enrollment.student_id == student_id)
-            ).scalars().first()
-            if enr:
-                m = db.execute(
-                    select(Mastery).where(
-                        Mastery.enrollment_id == enr.id,
-                        Mastery.skill_id == last.skill_id,
-                    )
-                ).scalars().first()
-                if m:
-                    update_mastery(m, correct)
-        db.commit()
-        return feedback
+        if st:
+            update_skill_state(st, verdict)
+    return attempt

@@ -13,6 +13,9 @@ def _build() -> LLMProvider:
         if not config.LLM_BASE_URL:
             raise RuntimeError("LLM_BASE_URL required for openai_compat")
         return OpenAICompatProvider(config.LLM_API_KEY, config.LLM_MODEL, config.LLM_BASE_URL)
+    elif config.LLM_PROVIDER == "fake":
+        from .fake_provider import FakeProvider
+        return FakeProvider()
     raise RuntimeError(f"Unknown LLM_PROVIDER: {config.LLM_PROVIDER}")
 
 

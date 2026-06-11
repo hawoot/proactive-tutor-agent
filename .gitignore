@@ -8,3 +8,8 @@ __pycache__/
 node_modules/
 .expo/
 dist/
+# runtime artifacts
+backend/tutor.log
+backend/tutor.pid
+backend/supervisord.*
+backend/supervisor.sock

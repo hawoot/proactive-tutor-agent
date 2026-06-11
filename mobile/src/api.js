@@ -1,40 +1,109 @@
 // The only file that knows how to talk to the backend.
-// Set the base URL once on the Settings screen; it's stored on-device.
+// Configure URL / API key / user id once on the Settings screen; stored on-device.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const KEY_URL = 'backend_url';
-const KEY_STUDENT = 'student_id';
+const KEY_API_KEY = 'api_key';
+const KEY_USER = 'user_id';
 
 export async function getConfig() {
-  const url = (await AsyncStorage.getItem(KEY_URL)) || '';
-  const studentId = parseInt((await AsyncStorage.getItem(KEY_STUDENT)) || '1', 10);
-  return { url: url.replace(/\/$/, ''), studentId };
+  const [url, apiKey, userId] = await Promise.all([
+    AsyncStorage.getItem(KEY_URL),
+    AsyncStorage.getItem(KEY_API_KEY),
+    AsyncStorage.getItem(KEY_USER),
+  ]);
+  return {
+    url: (url || '').replace(/\/+$/, ''),
+    apiKey: apiKey || '',
+    userId: parseInt(userId || '1', 10),
+  };
 }
 
-export async function saveConfig(url, studentId) {
-  await AsyncStorage.setItem(KEY_URL, url.trim());
-  await AsyncStorage.setItem(KEY_STUDENT, String(studentId));
+export async function saveConfig({ url, apiKey, userId }) {
+  await Promise.all([
+    AsyncStorage.setItem(KEY_URL, (url || '').trim()),
+    AsyncStorage.setItem(KEY_API_KEY, (apiKey || '').trim()),
+    AsyncStorage.setItem(KEY_USER, String(userId || 1)),
+  ]);
 }
 
 async function call(method, path, body) {
-  const { url } = await getConfig();
+  const { url, apiKey } = await getConfig();
   if (!url) throw new Error('Set the backend URL in Settings first.');
-  const res = await fetch(`${url}${path}`, {
-    method,
-    headers: { 'content-type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) throw new Error(`Backend error ${res.status}`);
+  let res;
+  try {
+    res = await fetch(`${url}${path}`, {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        ...(apiKey ? { 'X-API-Key': apiKey } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    throw new Error(`Cannot reach the backend (${e.message}). Check the URL in Settings.`);
+  }
+  if (!res.ok) {
+    let detail = `Backend error ${res.status}`;
+    try {
+      const j = await res.json();
+      if (j.detail) detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail);
+    } catch {}
+    throw new Error(detail);
+  }
   return res.json();
 }
 
 export const api = {
   health: () => call('GET', '/health'),
   seed: () => call('POST', '/seed'),
-  openQuestion: (sid) => call('GET', `/open_question?student_id=${sid}`),
-  newQuestion: (sid) => call('POST', `/question?student_id=${sid}`),
-  answer: (sid, text) => call('POST', '/message', { student_id: sid, text }),
-  progress: (sid) => call('GET', `/progress?student_id=${sid}`),
-  registerDevice: (sid, token) =>
-    call('POST', '/register_device', { student_id: sid, expo_push_token: token }),
+
+  // users / settings
+  getUser: (uid) => call('GET', `/users/${uid}`),
+  updateUser: (uid, patch) => call('PATCH', `/users/${uid}`, patch),
+
+  // devices
+  registerDevice: (uid, channel, ref, label) =>
+    call('POST', '/devices', { user_id: uid, channel, channel_ref: ref, label }),
+
+  // library
+  listPrograms: (uid) => call('GET', `/programs?user_id=${uid}`),
+  createProgram: (p) => call('POST', '/programs', p),
+  updateProgram: (id, uid, patch) => call('PATCH', `/programs/${id}?user_id=${uid}`, patch),
+  deleteProgram: (id, uid) => call('DELETE', `/programs/${id}?user_id=${uid}`),
+  cloneProgram: (id, uid) => call('POST', `/programs/${id}/clone?user_id=${uid}`),
+  programTree: (id) => call('GET', `/programs/${id}/tree`),
+  programSkills: (id) => call('GET', `/programs/${id}/skills`),
+
+  createUnit: (uid, u) => call('POST', `/units?user_id=${uid}`, u),
+  updateUnit: (id, uid, patch) => call('PATCH', `/units/${id}?user_id=${uid}`, patch),
+  deleteUnit: (id, uid) => call('DELETE', `/units/${id}?user_id=${uid}`),
+
+  createSkill: (uid, s) => call('POST', `/skills?user_id=${uid}`, s),
+  updateSkill: (id, uid, patch) => call('PATCH', `/skills/${id}?user_id=${uid}`, patch),
+  deleteSkill: (id, uid) => call('DELETE', `/skills/${id}?user_id=${uid}`),
+
+  // notes (private annotations)
+  listNotes: (uid, q = '') => call('GET', `/notes?user_id=${uid}${q}`),
+  createNote: (n) => call('POST', '/notes', n),
+  updateNote: (id, uid, body) => call('PATCH', `/notes/${id}?user_id=${uid}`, { body }),
+  deleteNote: (id, uid) => call('DELETE', `/notes/${id}?user_id=${uid}`),
+
+  // enrollments
+  listEnrollments: (uid) => call('GET', `/enrollments?user_id=${uid}`),
+  enroll: (uid, programId, examDate) =>
+    call('POST', '/enrollments', { user_id: uid, program_id: programId, exam_date: examDate || null }),
+  updateEnrollment: (id, patch) => call('PATCH', `/enrollments/${id}`, patch),
+  unenroll: (id) => call('DELETE', `/enrollments/${id}`),
+
+  // practice
+  openQuestion: (uid) => call('GET', `/practice/open?user_id=${uid}`),
+  newQuestion: (uid, opts = {}) => call('POST', '/practice/question', { user_id: uid, ...opts }),
+  answer: (uid, text) => call('POST', '/practice/answer', { user_id: uid, text }),
+  skip: (uid) => call('POST', `/practice/skip?user_id=${uid}`),
+
+  // progress
+  progress: (uid) => call('GET', `/progress?user_id=${uid}`),
+  attempts: (uid, limit = 30) => call('GET', `/attempts?user_id=${uid}&limit=${limit}`),
+  notifications: (uid) => call('GET', `/notifications?user_id=${uid}`),
 };

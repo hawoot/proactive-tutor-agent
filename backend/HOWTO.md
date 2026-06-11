@@ -1,78 +1,133 @@
 # backend/HOWTO
 
-## First: can your VPS run Docker?
+The backend is **one process**: FastAPI API + the proactive scheduler embedded
+in it. Migrations run automatically on startup. SQLite by default.
 
-```bash
-systemd-detect-virt    # kvm/qemu = real VM -> Docker path. lxc/openvz = container -> systemd path
-```
+Pick your deployment:
 
-## Path A - Docker (real VM, or container with nesting enabled)
+| | You have | Use |
+|---|---|---|
+| **Option A** | a bare container (no Docker inside, no systemd) - *current setup* | `deploy/container.sh` |
+| **Option B** | a full machine / VM with Docker - *future setup* | `docker compose` |
+
+Switching A -> B later: copy `backend/tutor.db` and `backend/.env` over, done.
+
+## First, on any path: configure
 
 ```bash
 git clone https://github.com/hawoot/proactive-tutor-agent.git
 cd proactive-tutor-agent
 cp backend/.env.example backend/.env
-nano backend/.env                  # set LLM_API_KEY
-docker compose up -d --build
+nano backend/.env       # set LLM_API_KEY  and  API_KEY (openssl rand -hex 24)
+```
+
+`API_KEY` is what the mobile app puts in its Settings screen. Don't skip it if
+the server is reachable from the internet.
+
+## Option A - bare container (no Docker needed)
+
+Needs only `python3` (3.10+) and `curl`.
+
+```bash
+bash deploy/container.sh start     # creates venv, installs deps, starts on :8000
 ```
 
 Day-to-day:
 ```bash
-docker compose logs -f scheduler            # watch the nudges
+bash deploy/container.sh status    # is it up? (+ /health output)
+bash deploy/container.sh logs      # tail the log (scheduler nudges show here too)
+git pull && bash deploy/container.sh start    # update + restart
+bash deploy/container.sh stop
+```
+
+The DB is the single file `backend/tutor.db` - copy it to back up everything
+personal and shared. If the container restarts, run
+`bash deploy/container.sh start` again (or add it to whatever startup hook the
+host gives you).
+
+## Option B - full machine with Docker
+
+```bash
+docker compose up -d --build       # one service: API + embedded scheduler
+docker compose logs -f             # watch it (nudges included)
 git pull && docker compose up -d --build    # update
-docker compose down                         # stop (DB survives)
-docker compose down -v                      # stop AND wipe DB
+docker compose down                # stop (DB survives in the tutor-data volume)
 ```
 
-## Path B - systemd (when Docker can't run inside your container)
-
-```bash
-sudo mkdir -p /opt/proactive-tutor-agent && sudo chown $USER /opt/proactive-tutor-agent
-git clone https://github.com/hawoot/proactive-tutor-agent.git /opt/proactive-tutor-agent
-cd /opt/proactive-tutor-agent/backend
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env && nano .env           # set LLM_API_KEY
-sudo cp deploy/tutor-api.service deploy/tutor-scheduler.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now tutor-api tutor-scheduler
-```
-
-Note: the systemd api unit binds 127.0.0.1. To reach it from your phone, edit
-/etc/systemd/system/tutor-api.service -> change --host 127.0.0.1 to --host 0.0.0.0,
-then: sudo systemctl daemon-reload && sudo systemctl restart tutor-api
-
-Day-to-day:
-```bash
-journalctl -u tutor-scheduler -f            # watch the nudges
-cd /opt/proactive-tutor-agent && git pull && sudo systemctl restart tutor-api tutor-scheduler
-```
+Scaling further (separate scheduler container + Postgres):
+`docker-compose.split.yml` - add `psycopg[binary]>=3.1` to requirements.txt first.
 
 ## Smoke test (either path)
 
 ```bash
-curl -X POST localhost:8000/seed
-curl -X POST "localhost:8000/question?student_id=1"
-curl -X POST localhost:8000/message -H 'content-type: application/json' \
-     -d '{"student_id":1,"text":"YOUR ANSWER"}'
+KEY="your API_KEY value"
+curl localhost:8000/health                                  # no key needed
+curl -X POST localhost:8000/seed -H "X-API-Key: $KEY"       # demo program + user 1
+curl -X POST localhost:8000/practice/question -H "X-API-Key: $KEY" \
+     -H 'content-type: application/json' -d '{"user_id":1}'
+curl -X POST localhost:8000/practice/answer -H "X-API-Key: $KEY" \
+     -H 'content-type: application/json' -d '{"user_id":1,"text":"YOUR ANSWER"}'
 ```
-A marked answer back = it works. From outside: http://VPS_IP:8000
-(open the firewall if needed: sudo ufw allow 8000).
-Note: no auth yet - fine for self-use, add an API key before real users.
+
+A marked answer back (verdict + feedback) = the whole loop works.
+From your phone: `http://SERVER_IP:8000` (port 8000 must be reachable).
+
+Interactive API docs: `http://SERVER_IP:8000/docs` - every endpoint, try-it-out.
+
+## The API in one minute
+
+| Area | Endpoints |
+|---|---|
+| content | `GET/POST/PATCH/DELETE /programs`, `/units`, `/skills`; `GET /programs/{id}/tree`; `POST /programs/{id}/clone` |
+| personal | `GET/POST/PATCH/DELETE /users`, `/devices`, `/notes`, `/enrollments` |
+| practice | `GET /practice/open`, `POST /practice/question`, `/practice/answer`, `/practice/skip` |
+| insight | `GET /progress`, `/attempts`, `/notifications` |
+
+Shared content has `owner_id: null`; pass `?user_id=N` on reads to also see N's
+personal content, and on writes to prove ownership.
 
 ## The database
 
-SQLite = one file (Docker: in the tutor-data volume; systemd: backend/tutor.db).
-Auto-created. Nothing to install or deploy. Swap DATABASE_URL to Postgres when
-you have real users.
+- SQLite = one file (`backend/tutor.db`; Docker: in the `tutor-data` volume).
+  Auto-created, auto-migrated on startup (Alembic).
+- **Changing the schema later**: edit `app/models.py`, then
+  ```bash
+  cd backend && alembic revision --autogenerate -m "what changed"
+  ```
+  Commit the generated file in `alembic/versions/`. Every deployment applies it
+  automatically on next restart.
+- **Postgres upgrade** (when you have real users): set `DATABASE_URL` in `.env`,
+  add `psycopg[binary]>=3.1` to requirements, restart. Same migrations apply.
 
-## Switching LLM provider (Anthropic not baked in)
+## Switching LLM provider (nothing baked in)
 
-In backend/.env - everything routes through app/llm/:
+In `backend/.env` - everything routes through `app/llm/`:
 ```ini
-LLM_PROVIDER=anthropic           # or: openai_compat (OpenAI, DeepSeek, Ollama...)
+LLM_PROVIDER=anthropic   # or: openai_compat (OpenAI, DeepSeek, Ollama...) | fake (offline dev)
 LLM_MODEL=claude-sonnet-4-6
 LLM_API_KEY=...
-LLM_BASE_URL=                    # only for openai_compat, e.g. https://api.deepseek.com/v1
+LLM_BASE_URL=            # only for openai_compat, e.g. https://api.deepseek.com/v1
 ```
-Then restart (compose up -d / systemctl restart).
+Then restart. `LLM_PROVIDER=fake` runs the full loop offline (canned questions) -
+useful for testing deployment before spending tokens.
+
+## How the scheduler decides (the moat - tune it)
+
+Per due user, every `SCHEDULER_POLL_SECONDS`:
+1. **fence** (deterministic, per-user): quiet hours in the user's timezone,
+   max nudges/day (counted from `notification_log`), never stack on an open question.
+2. **decide**: pick across active enrollments - due-for-review first, else weakest.
+3. **phrase**: LLM writes ONE question for that skill (unit material as context).
+4. **notify**: all active devices; each send logged.
+5. **reschedule**: exam <=7 days away -> ~4h gaps; <=30 days -> ~12h; else daily.
+
+Tuning lives in `app/scheduler.py` (cadence, fence) and `app/agent.py`
+(mastery EMA, spaced-repetition intervals, selection order).
+
+## Tests
+
+```bash
+cd backend && pip install pytest && python -m pytest tests/ -q
+```
+Covers the full API: auth, CRUD, ownership guards, clone, practice loop (fake
+LLM), scheduler tick, cascade deletes. Runs on a throwaway DB, no network.

@@ -1,0 +1,39 @@
+# Scaled-up layout for later: API and scheduler as separate containers,
+# Postgres instead of SQLite. Use when you outgrow the single service:
+#   docker compose -f docker-compose.split.yml up -d --build
+services:
+  api:
+    build: ./backend
+    env_file: backend/.env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://tutor:${POSTGRES_PASSWORD:-tutor}@db:5432/tutor
+      - SCHEDULER_MODE=off            # the scheduler service owns the loop
+    ports:
+      - "8000:8000"
+    depends_on: [db]
+    restart: unless-stopped
+
+  scheduler:                          # exactly one instance
+    build: ./backend
+    env_file: backend/.env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://tutor:${POSTGRES_PASSWORD:-tutor}@db:5432/tutor
+    command: python -m app.scheduler
+    depends_on: [db]
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=tutor
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-tutor}
+      - POSTGRES_DB=tutor
+    volumes:
+      - tutor-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  tutor-pgdata:
+
+# Note: the postgres driver is not in requirements.txt yet (SQLite needs none).
+# Before first use add this line to backend/requirements.txt:  psycopg[binary]>=3.1
