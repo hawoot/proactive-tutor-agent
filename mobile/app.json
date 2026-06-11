@@ -5,9 +5,31 @@
     "version": "2.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "platforms": ["ios", "android"],
-    "ios": { "supportsTablet": false, "bundleIdentifier": "com.nidhal.proactivetutor" },
-    "android": { "package": "com.nidhal.proactivetutor" },
-    "plugins": ["expo-notifications"]
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.nidhal.proactivetutor"
+    },
+    "android": {
+      "package": "com.nidhal.proactivetutor"
+    },
+    "plugins": [
+      "expo-notifications"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3bdd17d3-b6e4-4802-91de-9a02031614fb"
+      }
+    },
+    "owner": "hawoot",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/3bdd17d3-b6e4-4802-91de-9a02031614fb"
+    }
   }
 }
