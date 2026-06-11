@@ -2,9 +2,15 @@
   "expo": {
     "name": "Tutor",
     "slug": "proactive-tutor",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1c150f"
+    },
     "platforms": [
       "ios",
       "android"
@@ -14,7 +20,11 @@
       "bundleIdentifier": "com.nidhal.proactivetutor"
     },
     "android": {
-      "package": "com.nidhal.proactivetutor"
+      "package": "com.nidhal.proactivetutor",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2b2118"
+      }
     },
     "plugins": [
       "expo-notifications"

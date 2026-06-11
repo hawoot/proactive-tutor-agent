@@ -1,6 +1,6 @@
 {
   "name": "tutor-mobile",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
@@ -18,9 +18,9 @@
     "expo-notifications": "~0.31.0",
     "expo-updates": "~0.28.18",
     "react": "19.0.0",
-    "react-native": "0.79.2",
+    "react-native": "0.79.6",
     "react-native-safe-area-context": "5.4.0",
-    "react-native-screens": "~4.10.0"
+    "react-native-screens": "~4.11.1"
   },
   "private": true
 }
