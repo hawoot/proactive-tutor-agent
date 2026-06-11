@@ -1,6 +1,6 @@
 {
   "name": "tutor-mobile",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
@@ -13,6 +13,7 @@
     "@react-navigation/native": "^7.1.6",
     "@react-navigation/native-stack": "^7.3.10",
     "expo": "~53.0.0",
+    "expo-asset": "~11.1.7",
     "expo-constants": "~17.1.0",
     "expo-device": "~7.1.0",
     "expo-notifications": "~0.31.0",

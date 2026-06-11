@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tutor",
     "slug": "proactive-tutor",
-    "version": "2.1.1",
+    "version": "2.1.2",
     "newArchEnabled": false,
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
@@ -28,7 +28,8 @@
       }
     },
     "plugins": [
-      "expo-notifications"
+      "expo-notifications",
+      "expo-asset"
     ],
     "extra": {
       "eas": {
