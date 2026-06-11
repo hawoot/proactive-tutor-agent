@@ -134,7 +134,12 @@ def program_tree(program_id: int, db: Session = Depends(get_db)):
         .order_by(Skill.position, Skill.id)
     ).scalars().all()
 
-    nodes = {u.id: UnitNode.model_validate(u) for u in units}
+    # Build nodes explicitly: model_validate(u) would also pull the ORM
+    # skills relationship, duplicating every skill we append below.
+    nodes = {u.id: UnitNode(
+        id=u.id, program_id=u.program_id, parent_id=u.parent_id,
+        position=u.position, title=u.title, content=u.content,
+    ) for u in units}
     for s in skills:
         if s.unit_id in nodes:
             nodes[s.unit_id].skills.append(SkillOut.model_validate(s))

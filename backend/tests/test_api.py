@@ -28,11 +28,12 @@ def test_everything():
         assert c.post("/seed", headers=H).json()["user_id"] == 1
         assert "already seeded" in c.post("/seed", headers=H).json()["note"]
 
-        # library: shared program visible, tree built
+        # library: shared program visible, full curriculum tree built
         progs = c.get("/programs?user_id=1", headers=H).json()
-        assert progs[0]["owner_id"] is None and progs[0]["skill_count"] == 3
+        assert progs[0]["owner_id"] is None and progs[0]["skill_count"] > 40
         tree = c.get("/programs/1/tree", headers=H).json()
-        assert tree[0]["title"] == "Pure Mathematics" and len(tree[0]["children"]) == 2
+        assert [t["title"] for t in tree] == ["Pure Mathematics", "Statistics", "Mechanics"]
+        assert len(tree[0]["children"]) >= 8  # Pure topic units
 
         # content CRUD on a personal program
         p = c.post("/programs", json={"title": "My Prep", "owner_id": 1}, headers=H).json()
@@ -48,7 +49,7 @@ def test_everything():
         # clone shared -> personal (deep copy)
         clone = c.post("/programs/1/clone?user_id=1", headers=H).json()
         ctree = c.get(f"/programs/{clone['id']}/tree", headers=H).json()
-        assert len(ctree[0]["children"]) == 2
+        assert len(ctree[0]["children"]) == len(tree[0]["children"])  # full deep copy
 
         # ownership guards
         c.post("/users", json={"name": "Other"}, headers=H)
