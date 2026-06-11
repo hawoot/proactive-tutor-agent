@@ -57,6 +57,7 @@ async function call(method, path, body) {
 export const api = {
   health: () => call('GET', '/health'),
   seed: () => call('POST', '/seed'),
+  policies: () => call('GET', '/policies'),
 
   // users / settings
   getUser: (uid) => call('GET', `/users/${uid}`),

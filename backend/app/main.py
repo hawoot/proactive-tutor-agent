@@ -56,3 +56,31 @@ def health():
 def seed(db: Session = Depends(get_db)):
     """One-shot demo seed: a shared A-level maths program + an enrolled user."""
     return seed_module.seed(db)
+
+
+@app.get("/policies")
+def policies():
+    """The valid values for every enrollment policy toggle - clients (and
+    agents) discover the switches instead of hardcoding them."""
+    from . import agent
+    return {
+        "selection_strategy": {
+            "options": list(agent.SELECTION_STRATEGIES),
+            "default": "due_then_weakest",
+            "description": "How the next skill is picked.",
+        },
+        "marking_strictness": {
+            "options": list(agent.MARKING_RUBRICS),
+            "default": "balanced",
+            "description": "How generously answers are graded.",
+        },
+        "question_style": {
+            "options": list(agent.STYLE_RULES),
+            "default": "plain",
+            "description": "plain = phone-friendly notation; latex = allow LaTeX.",
+        },
+        "repeat_cooldown_hours": {
+            "min": 0, "max": 168, "default": 6,
+            "description": "Hours before the same skill can be drilled again (unless due for review).",
+        },
+    }

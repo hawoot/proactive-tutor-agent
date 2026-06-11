@@ -1,6 +1,14 @@
-"""Pydantic request/response shapes. The API contract, in one place."""
+"""Pydantic request/response shapes. The API contract, in one place.
+
+Policy toggles are Literal enums: the API physically cannot accept a strategy
+name that code doesn't implement - structured switches, not free text."""
 from datetime import datetime
+from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
+
+SelectionStrategy = Literal["due_then_weakest", "due_then_unseen", "round_robin"]
+MarkingStrictness = Literal["strict", "balanced", "lenient"]
+QuestionStyle = Literal["plain", "latex"]
 
 
 class ORM(BaseModel):
@@ -174,9 +182,14 @@ class EnrollmentCreate(BaseModel):
 
 
 class EnrollmentUpdate(BaseModel):
-    status: str | None = None      # active | paused | completed
+    status: Literal["active", "paused", "completed"] | None = None
     exam_date: datetime | None = None
     clear_exam_date: bool = False
+    # policy toggles - validated enums + bounded numbers
+    selection_strategy: SelectionStrategy | None = None
+    repeat_cooldown_hours: float | None = Field(None, ge=0, le=168)
+    marking_strictness: MarkingStrictness | None = None
+    question_style: QuestionStyle | None = None
 
 
 class EnrollmentOut(ORM):
@@ -185,6 +198,10 @@ class EnrollmentOut(ORM):
     program_id: int
     status: str
     exam_date: datetime | None
+    selection_strategy: str
+    repeat_cooldown_hours: float
+    marking_strictness: str
+    question_style: str
     program_title: str = ""
 
 

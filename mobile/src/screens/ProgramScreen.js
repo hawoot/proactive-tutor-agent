@@ -122,6 +122,8 @@ export default function ProgramScreen({ route, navigation }) {
                 <View style={s.btnHalf}><Btn small label={enrollment.status === 'active' ? 'Pause' : 'Resume'} onPress={pauseResume} kind="secondary" /></View>
                 <View style={s.btnHalf}><Btn small label="Set exam date" onPress={() => setEditor({ type: 'exam' })} kind="secondary" /></View>
               </View>
+              <Btn small label="Tutor policy (how it picks, marks, phrases)"
+                onPress={() => setEditor({ type: 'policy' })} kind="secondary" />
               <Btn small label="Unenroll" onPress={() => confirmDelete('enrollment', unenroll)} kind="danger" />
             </>
           ) : (
@@ -194,6 +196,10 @@ export default function ProgramScreen({ route, navigation }) {
       />
       <ExamDateEditor
         visible={editor?.type === 'exam'} enrollment={enrollment}
+        onClose={() => setEditor(null)} onSaved={() => { setEditor(null); load(); }}
+      />
+      <PolicyEditor
+        visible={editor?.type === 'policy'} enrollment={enrollment}
         onClose={() => setEditor(null)} onSaved={() => { setEditor(null); load(); }}
       />
     </View>
@@ -389,6 +395,67 @@ function NoteEditor({ visible, editor, userId, onClose, onSaved }) {
       <Field value={body} onChangeText={setBody} multiline
         placeholder="Only you see this. Clear the text to delete the note." />
       <Btn label="Save note" onPress={save} busy={busy} />
+    </Sheet>
+  );
+}
+
+function PolicyEditor({ visible, enrollment, onClose, onSaved }) {
+  // Structured toggles: the option lists come from GET /policies, so the app
+  // always shows exactly the switches the backend implements - nothing freehand.
+  const [meta, setMeta] = useState(null);
+  const [values, setValues] = useState({});
+  const [cooldown, setCooldown] = useState('6');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  React.useEffect(() => {
+    if (!visible || !enrollment) return;
+    setErr('');
+    setValues({
+      selection_strategy: enrollment.selection_strategy,
+      marking_strictness: enrollment.marking_strictness,
+      question_style: enrollment.question_style,
+    });
+    setCooldown(String(enrollment.repeat_cooldown_hours ?? 6));
+    api.policies().then(setMeta).catch((e) => setErr(e.message));
+  }, [visible, enrollment]);
+
+  const save = async () => {
+    const hours = parseFloat(cooldown);
+    if (Number.isNaN(hours) || hours < 0 || hours > 168) {
+      setErr('Cooldown must be 0-168 hours.'); return;
+    }
+    setBusy(true); setErr('');
+    try {
+      await api.updateEnrollment(enrollment.id, { ...values, repeat_cooldown_hours: hours });
+      onSaved();
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  };
+
+  const toggle = (key, label) => meta && (
+    <View key={key} style={{ marginBottom: 10 }}>
+      <Text style={s.editorLabel}>{label}</Text>
+      <Text style={s.editorHint}>{meta[key].description}</Text>
+      <Choice
+        options={meta[key].options.map((o) => ({ value: o, label: o.replace(/_/g, ' ') }))}
+        value={values[key]}
+        onChange={(v) => setValues((p) => ({ ...p, [key]: v }))}
+      />
+    </View>
+  );
+
+  return (
+    <Sheet visible={visible} title="Tutor policy" onClose={onClose}>
+      <ErrorText>{err}</ErrorText>
+      {toggle('selection_strategy', 'Skill selection')}
+      {toggle('marking_strictness', 'Marking strictness')}
+      {toggle('question_style', 'Question style')}
+      <Field
+        label="Repeat cooldown (hours before re-drilling the same skill)"
+        value={cooldown} onChangeText={setCooldown} keyboardType="numeric"
+      />
+      <Btn label="Save policy" onPress={save} busy={busy} />
     </Sheet>
   );
 }

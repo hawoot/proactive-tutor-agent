@@ -146,7 +146,13 @@ class Device(Base):
 
 
 class Enrollment(Base):
-    """The bridge between the two domains: this user studies this program."""
+    """The bridge between the two domains: this user studies this program.
+
+    Carries the learner-facing POLICY TOGGLES: enumerated strategy names the
+    API validates against a fixed list (see agent.SELECTION_STRATEGIES and
+    schemas.EnrollmentUpdate) and code resolves through a registry. Adding a
+    strategy = one function + one registry entry; users can only pick names
+    that exist."""
     __tablename__ = "enrollments"
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(
@@ -155,6 +161,14 @@ class Enrollment(Base):
         ForeignKey("programs.id", ondelete="CASCADE"), index=True)
     status: Mapped[str] = mapped_column(String(20), default="active")  # active | paused | completed
     exam_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # --- policy toggles (validated enums + bounded numbers) ---
+    selection_strategy: Mapped[str] = mapped_column(
+        String(40), default="due_then_weakest")  # due_then_weakest | due_then_unseen | round_robin
+    repeat_cooldown_hours: Mapped[float] = mapped_column(Float, default=6.0)
+    marking_strictness: Mapped[str] = mapped_column(
+        String(20), default="balanced")          # strict | balanced | lenient
+    question_style: Mapped[str] = mapped_column(
+        String(20), default="plain")             # plain (phone-friendly) | latex
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     user: Mapped[User] = relationship(back_populates="enrollments")
@@ -226,8 +240,12 @@ class Note(Base):
 
 
 class NotificationLog(Base):
-    """Every nudge the scheduler sent (or failed to send). Powers the daily
-    cap, the history screen, and debugging 'why didn't it ping me?'."""
+    """The notification OUTBOX + audit log. Deciding to nudge INSERTs a
+    'queued' row (fast, transactional); a dispatcher drains queued rows and
+    delivers them. Today the dispatcher is an in-process SQL poller
+    (notifier.dispatch_pending); at scale, swap it for Redis/SQS workers
+    behind the same function - nothing upstream changes. Also powers the
+    daily cap, the history screen, and 'why didn't it ping me?'."""
     __tablename__ = "notification_log"
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(
@@ -235,7 +253,10 @@ class NotificationLog(Base):
     device_id: Mapped[int | None] = mapped_column(
         ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
     channel: Mapped[str] = mapped_column(String(40), default="")
+    channel_ref: Mapped[str] = mapped_column(String(300), default="")
     body: Mapped[str] = mapped_column(Text, default="")
-    status: Mapped[str] = mapped_column(String(20), default="sent")  # sent | failed
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)  # queued | sent | failed
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(Text, default="")
-    sent_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)  # when queued (intent time - powers the cap)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
