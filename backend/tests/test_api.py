@@ -57,8 +57,19 @@ def test_everything():
         assert c.post("/enrollments", json={"user_id": 2, "program_id": p["id"]},
                       headers=H).status_code == 403
 
+        # policy toggles: structured enums - valid values stick, junk is rejected
+        assert "round_robin" in c.get("/policies", headers=H).json()["selection_strategy"]["options"]
+        enr2 = c.post("/enrollments", json={"user_id": 1, "program_id": p["id"]}, headers=H).json()
+        r = c.patch(f"/enrollments/{enr2['id']}", json={
+            "selection_strategy": "due_then_unseen", "marking_strictness": "lenient",
+            "question_style": "plain", "repeat_cooldown_hours": 2}, headers=H)
+        assert r.json()["selection_strategy"] == "due_then_unseen"
+        assert c.patch(f"/enrollments/{enr2['id']}", json={
+            "selection_strategy": "wild_west"}, headers=H).status_code == 422
+        assert c.patch(f"/enrollments/{enr2['id']}", json={
+            "repeat_cooldown_hours": 999}, headers=H).status_code == 422
+
         # practice loop (fake LLM): ask -> no stacking -> answer -> mastery moves
-        c.post("/enrollments", json={"user_id": 1, "program_id": p["id"]}, headers=H)
         q = c.post("/practice/question", json={"user_id": 1}, headers=H).json()
         assert c.post("/practice/question", json={"user_id": 1}, headers=H).json()["id"] == q["id"]
         a = c.post("/practice/answer", json={"user_id": 1, "text": "4"}, headers=H).json()
@@ -77,7 +88,7 @@ def test_everything():
         assert c.patch("/users/1", json={"timezone": "Europe/London"},
                        headers=H).json()["timezone"] == "Europe/London"
 
-        # scheduler tick: nudges + reschedules
+        # scheduler tick: queues via the outbox, dispatcher delivers, reschedules
         from sqlalchemy import select
         from app import scheduler
         from app.db import SessionLocal
@@ -89,8 +100,22 @@ def test_everything():
             db.commit()
         scheduler.tick()
         with SessionLocal() as db:
-            assert db.execute(select(NotificationLog)).scalars().all()
+            logs = db.execute(select(NotificationLog)).scalars().all()
+            assert logs and all(n.status == "sent" and n.delivered_at for n in logs)
             assert all(u.next_decision_at for u in db.execute(select(User)).scalars())
+
+        # repeat cooldown: a just-seen, not-yet-due skill is excluded for the
+        # scheduler but still served on demand
+        from app import agent as agent_mod
+        from app.models import Enrollment as EnrModel
+        with SessionLocal() as db:
+            enr_row = db.get(EnrModel, 1)  # seeded enrollment, one skill just answered
+            usr = db.get(User, 1)
+            scheduled = agent_mod.pick_skill(db, [enr_row], respect_cooldown=True)
+            on_demand = agent_mod.pick_skill(db, [enr_row], respect_cooldown=False)
+            assert on_demand is not None
+            if scheduled:  # if anything survives cooldown it must not be the just-seen skill
+                assert scheduled[1].last_seen_at is None
 
         # cleanup paths: skip, cascade deletes
         assert c.post("/practice/skip?user_id=1", headers=H).json()["ok"]

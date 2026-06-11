@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from . import config, agent
 from .db import SessionLocal
 from .models import utcnow, User, Device, Enrollment, NotificationLog
-from .notifier import notify_user
+from .notifier import queue_notification, dispatch_pending
 
 
 # --- the fence: deterministic hard rules (never the LLM's call) ------------
@@ -37,11 +37,12 @@ def within_quiet_hours(user: User, now: datetime) -> bool:
 
 
 def nudges_today(db: Session, user_id: int, now: datetime) -> int:
+    # Counts by INTENT (queued time), so failed/pending deliveries still
+    # throttle - the cap is about not spamming decisions, not about delivery.
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     return db.execute(
         select(func.count(NotificationLog.id)).where(
             NotificationLog.user_id == user_id,
-            NotificationLog.status == "sent",
             NotificationLog.sent_at >= start,
         )
     ).scalar() or 0
@@ -87,7 +88,9 @@ def decide_for(db: Session, user: User, now: datetime) -> None:
         devices = list(db.execute(
             select(Device).where(Device.user_id == user.id, Device.is_active == True)  # noqa: E712
         ).scalars())
-        notify_user(db, user.id, devices, attempt.question)
+        # Only ENQUEUE here (outbox) - delivery happens in the dispatch phase,
+        # so a slow push provider can never stall the decision loop.
+        queue_notification(db, user.id, devices, attempt.question)
 
     user.next_decision_at = now + timedelta(hours=next_gap_hours(enrollments, now))
 
@@ -104,6 +107,10 @@ def tick() -> None:
         ).scalars().all()
         for user in due:
             decide_for(db, user, now)
+        db.commit()
+    # Drain the outbox in its own transaction (and process - see notifier.py).
+    with SessionLocal() as db:
+        dispatch_pending(db)
         db.commit()
 
 

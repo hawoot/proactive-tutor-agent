@@ -122,7 +122,31 @@ Per due user, every `SCHEDULER_POLL_SECONDS`:
 5. **reschedule**: exam <=7 days away -> ~4h gaps; <=30 days -> ~12h; else daily.
 
 Tuning lives in `app/scheduler.py` (cadence, fence) and `app/agent.py`
-(mastery EMA, spaced-repetition intervals, selection order).
+(mastery EMA, spaced-repetition intervals).
+
+### Per-enrollment policy toggles (not hardcoded)
+
+Each enrollment carries validated switches - `GET /policies` lists every
+option, `PATCH /enrollments/{id}` sets them, the app has a "Tutor policy"
+editor. Unknown values are rejected (422):
+
+| toggle | options | what it changes |
+|---|---|---|
+| `selection_strategy` | due_then_weakest / due_then_unseen / round_robin | how the next skill is picked |
+| `marking_strictness` | strict / balanced / lenient | the grading rubric given to the LLM |
+| `question_style` | plain / latex | plain = phone-friendly notation, no LaTeX |
+| `repeat_cooldown_hours` | 0-168 | min hours before re-drilling the same skill |
+
+Adding a strategy = one function + one registry entry in `app/agent.py`
+(`SELECTION_STRATEGIES`) + its name in `app/schemas.py`.
+
+### Notifications are an outbox (queue-ready)
+
+Deciding to nudge only INSERTs a `queued` row in `notification_log`;
+`notifier.dispatch_pending()` drains the queue with retries on each tick.
+Scaling later = run the dispatcher in its own worker process(es) or swap its
+internals for Redis/SQS - the scheduler and agent never change. Same story as
+SQLite -> Postgres: the swap point exists, use it when load demands.
 
 ## Tests
 

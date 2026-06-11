@@ -1,13 +1,28 @@
 """
-Delivery is channel-agnostic. The scheduler decides WHAT to send and to WHOM;
-a Notifier decides HOW it reaches the device. Every send is recorded in
-notification_log (success or failure) - that log also powers the daily cap.
+Delivery is channel-agnostic AND decoupled (outbox pattern):
+
+  queue_notification()  - the scheduler/agent calls this. It only INSERTs
+                          'queued' rows into notification_log: fast,
+                          transactional, never blocks a decision on a slow
+                          push provider.
+  dispatch_pending()    - drains queued rows and actually delivers, with
+                          retries. Today it runs in-process on the scheduler
+                          tick (SQL as the queue - fine for thousands of
+                          users). At scale, run the SAME function from
+                          dedicated worker processes, or replace its internals
+                          with Redis/SQS - nothing upstream changes.
+
+A Notifier subclass decides HOW a message reaches a device. Add a channel =
+add a subclass.
 """
 from abc import ABC, abstractmethod
 import httpx
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from . import config
-from .models import Device, NotificationLog
+from .models import utcnow, Device, NotificationLog
+
+MAX_DELIVERY_ATTEMPTS = 3
 
 
 class Notifier(ABC):
@@ -49,19 +64,45 @@ def get_notifier(channel: str) -> Notifier:
     return ConsoleNotifier()
 
 
-def notify_user(db: Session, user_id: int, devices: list[Device], message: str) -> bool:
-    """Send to every active device; log each outcome. Returns True if any send
-    succeeded (console counts - it is the zero-setup dev channel)."""
+# --- outbox: write side ------------------------------------------------------
+
+def queue_notification(db: Session, user_id: int, devices: list[Device],
+                       message: str) -> int:
+    """Enqueue one delivery per active device (console fallback if none).
+    Returns the number of rows queued. No network I/O happens here."""
     if not devices:
-        devices = [Device(id=None, user_id=user_id, channel="console", channel_ref=f"user:{user_id}")]
-    any_ok = False
+        db.add(NotificationLog(
+            user_id=user_id, channel="console",
+            channel_ref=f"user:{user_id}", body=message))
+        return 1
     for d in devices:
-        log = NotificationLog(
-            user_id=user_id, device_id=d.id, channel=d.channel, body=message)
+        db.add(NotificationLog(
+            user_id=user_id, device_id=d.id, channel=d.channel,
+            channel_ref=d.channel_ref, body=message))
+    return len(devices)
+
+
+# --- outbox: drain side ----------------------------------------------------------
+
+def dispatch_pending(db: Session, limit: int = 50) -> int:
+    """Deliver queued notifications. Each row gets MAX_DELIVERY_ATTEMPTS tries
+    (re-picked on later ticks) before being marked failed. Returns sent count."""
+    rows = db.execute(
+        select(NotificationLog)
+        .where(NotificationLog.status == "queued")
+        .order_by(NotificationLog.id).limit(limit)
+    ).scalars().all()
+    sent = 0
+    for n in rows:
+        n.attempts += 1
         try:
-            get_notifier(d.channel).send(d.channel_ref, message)
-            any_ok = True
+            get_notifier(n.channel).send(n.channel_ref, n.body)
+            n.status = "sent"
+            n.delivered_at = utcnow()
+            n.error = ""
+            sent += 1
         except Exception as e:
-            log.status, log.error = "failed", str(e)[:500]
-        db.add(log)
-    return any_ok
+            n.error = str(e)[:500]
+            if n.attempts >= MAX_DELIVERY_ATTEMPTS:
+                n.status = "failed"
+    return sent

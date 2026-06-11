@@ -55,10 +55,9 @@ def update_enrollment(enrollment_id: int, body: EnrollmentUpdate,
     enr = db.get(Enrollment, enrollment_id)
     if not enr:
         raise HTTPException(404, "Unknown enrollment")
-    if body.status is not None:
-        enr.status = body.status
-    if body.exam_date is not None:
-        enr.exam_date = body.exam_date
+    for field, value in body.model_dump(exclude_unset=True, exclude={"clear_exam_date"}).items():
+        if value is not None:
+            setattr(enr, field, value)
     if body.clear_exam_date:
         enr.exam_date = None
     db.commit()
