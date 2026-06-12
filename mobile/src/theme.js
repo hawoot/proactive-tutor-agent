@@ -1,28 +1,58 @@
-// Bright & playful design tokens. One source of truth for colour, spacing
-// and type so every screen feels like the same app.
-export const colors = {
+// Nejma's design tokens: warm sand by day, night sky after dark.
+// The scheme is resolved from the system ONCE at JS startup, before any
+// StyleSheet.create runs, so every baked style gets the right palette.
+// When the system theme flips mid-session, App.js reloads the JS bundle.
+import { Appearance } from 'react-native';
+
+const light = {
   // brand
-  primary: '#58CC02', primaryDark: '#4BA802',   // action green
-  blue: '#1CB0F6', blueDark: '#1899D6',
-  purple: '#CE82FF', purpleDark: '#A568CC',
-  orange: '#FF9600', orangeDark: '#CC7800',
-  red: '#FF4B4B', redDark: '#CC3B3B',
-  yellow: '#FFC800',
+  primary: '#E16B4C', primaryDark: '#C4543A',   // terracotta - the action colour
+  blue: '#2E8FA8', blueDark: '#24788E',         // Mediterranean blue
+  purple: '#9A6BB5', purpleDark: '#7E549A',     // plum
+  orange: '#E89A3C', orangeDark: '#C77E27',     // amber gold
+  red: '#D9534F', redDark: '#B54440',
+  yellow: '#F4B942',
+  mascot: '#F4B942', mascotDark: '#C08A2D',     // Nejma's gold
   // surfaces & text
-  bg: '#FFFFFF',
-  bgSoft: '#F7F7F7',
+  bg: '#FBF7F0',           // warm sand
+  bgSoft: '#F3ECDF',
   card: '#FFFFFF',
-  line: '#E5E5E5',
-  ink: '#3C3C3C',
-  inkSoft: '#777777',
-  inkFaint: '#AFAFAF',
+  line: '#E9E0D1',
+  ink: '#33302A',
+  inkSoft: '#7C7468',
+  inkFaint: '#B3AA9B',
   // semantic
-  good: '#58CC02',
-  warn: '#FF9600',
-  bad: '#FF4B4B',
-  shared: '#1CB0F6',
-  personal: '#CE82FF',
+  good: '#5FA866',
+  warn: '#E89A3C',
+  bad: '#D9534F',
+  shared: '#2E8FA8',
+  personal: '#9A6BB5',
 };
+
+const dark = {
+  primary: '#E8795A', primaryDark: '#C05A3E',
+  blue: '#4FA3BC', blueDark: '#3A88A0',
+  purple: '#AC82C4', purpleDark: '#8F68A8',
+  orange: '#E8A34F', orangeDark: '#C58234',
+  red: '#E06661', redDark: '#B84B47',
+  yellow: '#F4B942',
+  mascot: '#F4B942', mascotDark: '#D9A53C',
+  bg: '#14161F',           // the night sky where Nejma shines
+  bgSoft: '#1B1E2B',
+  card: '#202433',
+  line: '#343950',
+  ink: '#EDEEF6',
+  inkSoft: '#9FA3B8',
+  inkFaint: '#5F6378',
+  good: '#6BB573',
+  warn: '#E8A34F',
+  bad: '#E06661',
+  shared: '#4FA3BC',
+  personal: '#AC82C4',
+};
+
+export const scheme = Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
+export const colors = scheme === 'dark' ? dark : light;
 
 export const radius = { sm: 10, md: 14, lg: 18, pill: 999 };
 export const pad = 16;

@@ -4,8 +4,9 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { api, getConfig, saveConfig } from '../api';
 import { registerForPush } from '../push';
-import { Btn, Card, Field, ErrorText, Chip } from '../components';
+import { Btn, Card, Field, ErrorText, Chip, Mascot } from '../components';
 import { colors, pad, type } from '../theme';
+import { BRAND } from '../brand';
 
 export default function OnboardingScreen({ navigation }) {
   const [step, setStep] = useState(0);
@@ -59,10 +60,11 @@ export default function OnboardingScreen({ navigation }) {
 
       {step === 0 && (
         <View style={s.center}>
-          <Text style={{ fontSize: 72 }}>🎓</Text>
-          <Text style={s.h1}>Your tutor that chases YOU</Text>
+          <Mascot pose="wave" size={150} />
+          <Text style={s.h1}>Meet {BRAND.mascotName} — the tutor who chases YOU</Text>
+          <Text style={s.sub}>{BRAND.story}</Text>
           <Text style={s.sub}>
-            It plans your practice around your exam, pings you at the right moments,
+            She plans practice around your exam, pings you at the right moments,
             and remembers exactly what you struggle with.
           </Text>
           <View style={{ alignSelf: 'stretch', marginTop: 24 }}>
@@ -73,7 +75,7 @@ export default function OnboardingScreen({ navigation }) {
 
       {step === 1 && (
         <>
-          <Text style={s.h1}>Connect to your tutor server</Text>
+          <Text style={s.h1}>Connect to Nejma's server</Text>
           <Text style={s.sub}>Ask whoever runs the backend for these two values.</Text>
           <ErrorText>{err}</ErrorText>
           <Card>
@@ -109,10 +111,10 @@ export default function OnboardingScreen({ navigation }) {
 
       {step === 3 && (
         <View style={s.center}>
-          <Text style={{ fontSize: 64 }}>🔔</Text>
-          <Text style={s.h1}>Let your tutor reach you</Text>
+          <Mascot pose="coach" size={130} />
+          <Text style={s.h1}>Let Nejma reach you</Text>
           <Text style={s.sub}>
-            The proactive part: it nudges you with one question at the right time -
+            The proactive part: she nudges you with one question at the right time -
             never during your quiet hours, never more than a few a day.
           </Text>
           <View style={{ alignSelf: 'stretch', marginTop: 24 }}>

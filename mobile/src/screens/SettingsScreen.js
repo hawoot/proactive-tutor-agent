@@ -113,7 +113,7 @@ export default function SettingsScreen() {
             <GoalSlider value={prefs.daily_goal} onChange={setPref('daily_goal')} />
           </Card>
 
-          <SectionTitle>When can your tutor nudge you?</SectionTitle>
+          <SectionTitle>When can Nejma nudge you?</SectionTitle>
           <Card>
             <WeekSchedule windows={windows} onChange={setWindows} />
             <View style={s.stepperRow}>

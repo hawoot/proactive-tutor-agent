@@ -7,7 +7,7 @@ import {
   KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { api, getConfig } from '../api';
-import { Btn, Chip, ErrorText, EmptyState } from '../components';
+import { Btn, Chip, ErrorText, EmptyState, Mascot } from '../components';
 import { colors, pad, radius, type } from '../theme';
 import { VERDICTS } from '../labels';
 
@@ -93,13 +93,13 @@ export default function PracticeScreen({ route, navigation }) {
     'Voice answers and photo uploads need microphone/camera access, which ships with the next app version.');
 
   if (phase === 'loading') {
-    return <View style={s.root}><EmptyState emoji="✏️" title="Picking your question…" /></View>;
+    return <View style={s.root}><EmptyState pose="think" title="Nejma is picking your question…" /></View>;
   }
   if (phase === 'error') {
     return (
       <View style={s.root}>
         <View style={{ padding: pad }}>
-          <EmptyState emoji="🤔" title="No question right now" hint={err} />
+          <EmptyState pose="think" title="No question right now" hint={err} />
           <Btn label="Try again" onPress={start} />
           <Btn label="Back" kind="ghost" onPress={() => navigation.goBack()} />
         </View>
@@ -120,7 +120,7 @@ export default function PracticeScreen({ route, navigation }) {
         {attempt?.skill_name ? <Chip text={attempt.skill_name} color={colors.blue} /> : null}
         <Chip text={attempt?.from_bank ? 'curated' : 'AI-generated'}
           color={attempt?.from_bank ? colors.good : colors.purple} />
-        {attempt?.source === 'scheduled' ? <Chip text="from your tutor" color={colors.orange} /> : null}
+        {attempt?.source === 'scheduled' ? <Chip text="from Nejma" color={colors.orange} /> : null}
       </View>
 
       <ScrollView ref={scrollRef} style={{ flex: 1 }}
@@ -131,7 +131,7 @@ export default function PracticeScreen({ route, navigation }) {
 
         {closed && verdict ? (
           <View style={[s.verdictBanner, { backgroundColor: verdict.color + '1A', borderColor: verdict.color }]}>
-            <Text style={{ fontSize: 40 }}>{verdict.emoji}</Text>
+            <Mascot pose={verdict.pose} size={96} bob={false} />
             <Text style={[s.verdictText, { color: verdict.color }]}>{verdict.label}</Text>
             {goal ? (
               <Text style={s.goalNote}>
@@ -146,8 +146,9 @@ export default function PracticeScreen({ route, navigation }) {
 
         {postMessages.map((m) => <Bubble key={m.id} m={m} />)}
         {thinking ? (
-          <View style={[s.bubble, s.tutorBubble]}>
-            <Text style={s.thinking}>tutor is thinking…</Text>
+          <View style={[s.bubble, s.tutorBubble, { flexDirection: 'row', alignItems: 'center' }]}>
+            <Mascot pose="think" size={28} bob={false} style={{ marginRight: 8 }} />
+            <Text style={s.thinking}>Nejma is thinking…</Text>
           </View>
         ) : null}
 

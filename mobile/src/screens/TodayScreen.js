@@ -4,9 +4,10 @@ import React, { useCallback, useState } from 'react';
 import { View, Text, ScrollView, RefreshControl, StyleSheet, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, getConfig } from '../api';
-import { Btn, Card, Chip, Bar, ErrorText, EmptyState, SectionTitle } from '../components';
+import { Btn, Card, Chip, Bar, ErrorText, EmptyState, SectionTitle, Mascot } from '../components';
 import { colors, pad, type, timeOfDay, dayLabel } from '../theme';
 import { VERDICTS } from '../labels';
+import { greeting } from '../brand';
 
 export default function TodayScreen({ navigation }) {
   const [data, setData] = useState(null);
@@ -35,10 +36,13 @@ export default function TodayScreen({ navigation }) {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
     >
       <ErrorText>{err}</ErrorText>
-      {!data && !err ? <EmptyState emoji="⏳" title="Loading your day…" /> : null}
+      {!data && !err ? <EmptyState pose="think" title="Loading your day…" /> : null}
 
       {data && (
         <>
+          {/* Nejma says hello */}
+          <GreetingRow goalDone={goalDone} />
+
           {/* streak + daily goal */}
           <View style={s.statsRow}>
             <View style={s.streakBox}>
@@ -58,7 +62,7 @@ export default function TodayScreen({ navigation }) {
           {!data.has_active_enrollment ? (
             <Card tint={colors.blue}>
               <Text style={s.heroTitle}>👋 Welcome!</Text>
-              <Text style={type.body}>Pick a course and your tutor starts planning your practice.</Text>
+              <Text style={type.body}>Pick a course and Nejma starts planning your practice.</Text>
               <Btn label="Browse courses" color="blue" onPress={() => navigation.navigate('Courses')} />
             </Card>
           ) : data.open_attempt ? (
@@ -83,8 +87,8 @@ export default function TodayScreen({ navigation }) {
               <Text style={s.heroTitle}>✅ All caught up</Text>
               <Text style={type.body}>
                 {data.next_nudge_at
-                  ? `Your tutor plans to ping you around ${timeOfDay(data.next_nudge_at)}.`
-                  : 'Your tutor will schedule the next nudge shortly.'}
+                  ? `Nejma plans to ping you around ${timeOfDay(data.next_nudge_at)}.`
+                  : 'Nejma will schedule the next nudge shortly.'}
               </Text>
               <Btn label="Practice anyway" kind="outline" onPress={() => practice(null)} />
             </Card>
@@ -107,7 +111,7 @@ export default function TodayScreen({ navigation }) {
           {data.next_nudge_at ? (
             <TimelineItem emoji="⏰" color={colors.blue}
               title={`Next nudge ~ ${timeOfDay(data.next_nudge_at)}`}
-              sub="Your tutor decides then whether to ping you" />
+              sub="Nejma decides then whether to ping you" />
           ) : null}
           {data.due_today > data.due_now ? (
             <TimelineItem emoji="📚" color={colors.orange}
@@ -144,6 +148,22 @@ export default function TodayScreen({ navigation }) {
   );
 }
 
+function GreetingRow({ goalDone }) {
+  const g = greeting(new Date().getHours());
+  const pose = goalDone ? 'celebrate' : g.pose;
+  const line = goalDone ? 'Tnejjem! Goal done ⭐' : g.line;
+  const sub = goalDone ? 'You said you couldn’t. Nejma disagreed. Extra is a bonus.' : g.sub;
+  return (
+    <View style={s.greetRow}>
+      <Mascot pose={pose} size={72} />
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <Text style={s.greetLine}>{line}</Text>
+        <Text style={type.meta}>{sub}</Text>
+      </View>
+    </View>
+  );
+}
+
 function TimelineItem({ emoji, color, title, sub }) {
   return (
     <View style={s.tlRow}>
@@ -163,6 +183,8 @@ function TimelineItem({ emoji, color, title, sub }) {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  greetRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  greetLine: { fontSize: 20, fontWeight: '800', color: colors.ink, marginBottom: 2 },
   statsRow: { flexDirection: 'row', marginBottom: 10, alignItems: 'stretch' },
   streakBox: {
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16,

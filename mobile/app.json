@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Tutor",
+    "name": "Nejma",
     "slug": "proactive-tutor",
-    "version": "3.0.0",
+    "version": "3.1.0",
     "newArchEnabled": false,
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1c150f"
+      "backgroundColor": "#14161F"
     },
     "platforms": [
       "ios",
@@ -24,7 +24,7 @@
       "package": "com.nidhal.proactivetutor",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#2b2118"
+        "backgroundColor": "#232742"
       },
       "googleServicesFile": "./google-services.json"
     },

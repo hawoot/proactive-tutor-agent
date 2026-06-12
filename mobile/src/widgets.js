@@ -7,6 +7,16 @@ import { Sheet } from './components';
 import { colors, radius, type } from './theme';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const ALL = [0, 1, 2, 3, 4, 5, 6];
+
+// One-tap starting points; the grid below is for fine-tuning. Tapping a
+// preset adds its hours; tapping again (when fully on) removes them.
+const PRESETS = [
+  { label: '🌅 Mornings', windows: ALL.map((d) => ({ weekday: d, start_hour: 7, end_hour: 9 })) },
+  { label: '🥪 Lunch breaks', windows: [0, 1, 2, 3, 4].map((d) => ({ weekday: d, start_hour: 12, end_hour: 14 })) },
+  { label: '🌙 Evenings', windows: ALL.map((d) => ({ weekday: d, start_hour: 18, end_hour: 22 })) },
+  { label: '🛋️ Weekends', windows: [5, 6].map((d) => ({ weekday: d, start_hour: 10, end_hour: 20 })) },
+];
 
 // --- windows <-> grid helpers -------------------------------------------------
 
@@ -56,11 +66,43 @@ export function WeekSchedule({ windows, onChange }) {
 
   const copyMondayToAll = () => {
     const monday = windows.filter((w) => w.weekday === 0);
-    onChange([0, 1, 2, 3, 4, 5, 6].flatMap((d) => monday.map((w) => ({ ...w, weekday: d }))));
+    onChange(ALL.flatMap((d) => monday.map((w) => ({ ...w, weekday: d }))));
+  };
+
+  const presetActive = (p) => p.windows.every((w) => {
+    for (let h = w.start_hour; h < w.end_hour; h++) if (!grid[w.weekday][h]) return false;
+    return true;
+  });
+
+  const togglePreset = (p) => {
+    const g = grid.map((row) => [...row]);
+    const on = !presetActive(p);
+    for (const w of p.windows) {
+      for (let h = w.start_hour; h < w.end_hour; h++) g[w.weekday][h] = on;
+    }
+    onChange(gridToWindows(g));
   };
 
   return (
     <View>
+      {/* presets first, grid for fine-tuning */}
+      <View style={s.presetRow}>
+        {PRESETS.map((p) => {
+          const on = presetActive(p);
+          return (
+            <TouchableOpacity key={p.label} onPress={() => togglePreset(p)}
+              style={[s.presetChip, on && s.presetChipOn]}>
+              <Text style={[s.presetText, on && s.presetTextOn]}>{p.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+        {windows.length > 0 && (
+          <TouchableOpacity onPress={() => onChange([])} style={s.presetChip}>
+            <Text style={s.presetText}>✕ Clear</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
       {/* hour scale */}
       <View style={s.scaleRow}>
         <View style={{ width: 36 }} />
@@ -86,7 +128,7 @@ export function WeekSchedule({ windows, onChange }) {
           </View>
         </View>
       ))}
-      <Text style={s.hint}>Tap the hours when your tutor may nudge you. Green = allowed.</Text>
+      <Text style={s.hint}>Tap a preset, then fine-tune by painting hours. Filled = Nejma may nudge you.</Text>
       <TouchableOpacity onPress={copyMondayToAll} style={{ marginTop: 6 }}>
         <Text style={s.copyLink}>📋 Copy Monday to every day</Text>
       </TouchableOpacity>
@@ -111,7 +153,7 @@ export function WeekSchedule({ windows, onChange }) {
       )}
       {windows.length === 0 && (
         <Text style={[s.hint, { color: colors.orangeDark, marginTop: 8 }]}>
-          No green hours = no nudges at all. Paint at least one block.
+          No allowed hours = no nudges at all. Tap a preset or paint at least one block.
         </Text>
       )}
     </View>
@@ -207,6 +249,15 @@ export function TimezonePicker({ visible, value, onSelect, onClose }) {
 }
 
 const s = StyleSheet.create({
+  presetRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10 },
+  presetChip: {
+    borderWidth: 2, borderColor: colors.line, borderRadius: radius.pill,
+    paddingHorizontal: 12, paddingVertical: 6, marginRight: 8, marginBottom: 6,
+    backgroundColor: colors.card,
+  },
+  presetChipOn: { borderColor: colors.primary, backgroundColor: colors.primary + '14' },
+  presetText: { fontSize: 13, fontWeight: '700', color: colors.inkSoft },
+  presetTextOn: { color: colors.primaryDark },
   scaleRow: { flexDirection: 'row', marginBottom: 4 },
   scaleText: { flex: 1, fontSize: 10, color: colors.inkFaint, fontWeight: '700' },
   dayRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },

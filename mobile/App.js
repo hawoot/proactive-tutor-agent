@@ -1,12 +1,13 @@
-// Proactive Tutor - mobile v3 (the bright & playful redesign).
+// Nejma - mobile v3.1 (warm redesign with a face and a name).
 // Onboarding on first launch, then four tabs; Practice is a full-screen flow.
 import React, { useEffect, useState } from 'react';
-import { Text, View, ActivityIndicator, ScrollView } from 'react-native';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { Text, View, ActivityIndicator, ScrollView, Appearance } from 'react-native';
+import * as Updates from 'expo-updates';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { getConfig } from './src/api';
-import { colors } from './src/theme';
+import { colors, scheme } from './src/theme';
 import TodayScreen from './src/screens/TodayScreen';
 import PracticeScreen from './src/screens/PracticeScreen';
 import CoursesScreen from './src/screens/CoursesScreen';
@@ -85,8 +86,11 @@ function MainTabs() {
 }
 
 const navTheme = {
-  ...DefaultTheme,
-  colors: { ...DefaultTheme.colors, background: colors.bg, card: colors.bg, text: colors.ink },
+  ...(scheme === 'dark' ? DarkTheme : DefaultTheme),
+  colors: {
+    ...(scheme === 'dark' ? DarkTheme : DefaultTheme).colors,
+    background: colors.bg, card: colors.bg, text: colors.ink, primary: colors.primary,
+  },
 };
 
 export default function App() {
@@ -97,6 +101,16 @@ export default function App() {
       const { url } = await getConfig();
       setInitialRoute(url ? 'Main' : 'Onboarding');
     })();
+  }, []);
+
+  // The palette is baked into StyleSheets at bundle load (see theme.js), so a
+  // mid-session system theme flip needs a JS reload to take effect.
+  useEffect(() => {
+    const sub = Appearance.addChangeListener(({ colorScheme }) => {
+      const next = colorScheme === 'dark' ? 'dark' : 'light';
+      if (next !== scheme) Updates.reloadAsync().catch(() => {});
+    });
+    return () => sub.remove();
   }, []);
 
   if (!initialRoute) {
