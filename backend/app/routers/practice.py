@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 from .. import agent
 from ..db import get_db
 from ..models import Attempt, Enrollment
-from ..schemas import QuestionRequest, AnswerRequest, AttemptOut
+from ..schemas import (
+    QuestionRequest, AnswerRequest, AttemptOut, ChatRequest, ChatResponse, MessageOut,
+)
 from .users import get_user_or_404
 
 router = APIRouter(prefix="/practice", tags=["practice"])
@@ -67,6 +69,54 @@ def answer(body: AnswerRequest, db: Session = Depends(get_db)):
     agent.handle_answer(db, attempt, body.text)
     db.commit()
     return _out(attempt)
+
+
+def _resolve_attempt(db: Session, user_id: int, attempt_id: int | None) -> Attempt:
+    if attempt_id:
+        attempt = db.get(Attempt, attempt_id)
+        if not attempt or attempt.user_id != user_id:
+            raise HTTPException(404, "Unknown attempt")
+        return attempt
+    attempt = agent.open_attempt(db, user_id)
+    if not attempt:
+        raise HTTPException(400, "No open question - ask for one first")
+    return attempt
+
+
+def _chat_response(db: Session, attempt: Attempt) -> ChatResponse:
+    agent.ensure_question_message(db, attempt)
+    return ChatResponse(
+        attempt=_out(attempt),
+        messages=[MessageOut.model_validate(m) for m in attempt.messages],
+        closed=bool(attempt.verdict),
+    )
+
+
+@router.get("/messages", response_model=ChatResponse)
+def messages(user_id: int, attempt_id: int | None = None,
+             db: Session = Depends(get_db)):
+    """The conversation about a question (default: the open one)."""
+    get_user_or_404(db, user_id)
+    attempt = _resolve_attempt(db, user_id, attempt_id)
+    resp = _chat_response(db, attempt)
+    db.commit()
+    return resp
+
+
+@router.post("/chat", response_model=ChatResponse)
+def chat(body: ChatRequest, db: Session = Depends(get_db)):
+    """Talk to the tutor about the open question. Final answers get marked
+    and close the attempt; everything else gets Socratic coaching."""
+    user = get_user_or_404(db, body.user_id)
+    attempt = _resolve_attempt(db, body.user_id, body.attempt_id)
+    if attempt.verdict:
+        raise HTTPException(400, "This question is already closed")
+    if not body.text.strip():
+        raise HTTPException(400, "Empty message")
+    agent.chat_turn(db, user, attempt, body.text.strip(), modality=body.modality)
+    resp = _chat_response(db, attempt)
+    db.commit()
+    return resp
 
 
 @router.post("/skip")

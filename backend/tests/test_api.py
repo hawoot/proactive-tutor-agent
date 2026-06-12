@@ -87,6 +87,22 @@ def test_everything():
         a = c.post("/practice/answer", json={"user_id": 1, "text": "2"}, headers=H).json()
         assert a["verdict"] == "correct"
 
+        # mini-conversation: coaching keeps the attempt open, a real answer closes it
+        q = c.post("/practice/question", json={"user_id": 1, "enrollment_id": enr2["id"]},
+                   headers=H).json()
+        r = c.post("/practice/chat", json={"user_id": 1, "text": "I'm stuck, any hint?"},
+                   headers=H).json()
+        assert not r["closed"] and r["messages"][-1]["role"] == "tutor"
+        assert r["messages"][0]["kind"] == "question"
+        r = c.post("/practice/chat", json={"user_id": 1, "text": "ok my answer is 2",
+                                           "modality": "voice"}, headers=H).json()
+        assert r["closed"] and r["attempt"]["verdict"] == "correct"
+        assert r["messages"][-1]["kind"] == "feedback"
+        hist = c.get("/practice/messages?user_id=1&attempt_id=" + str(q["id"]), headers=H).json()
+        assert len(hist["messages"]) >= 4
+        assert c.post("/practice/chat", json={"user_id": 1, "text": "more?",
+                                              "attempt_id": q["id"]}, headers=H).status_code == 400
+
         # generate_only flips back to creative questions (reasoning stripped by the parser)
         c.patch(f"/enrollments/{enr2['id']}", json={"question_source": "generate_only"}, headers=H)
         q2 = c.post("/practice/question", json={"user_id": 1, "enrollment_id": enr2["id"]},
