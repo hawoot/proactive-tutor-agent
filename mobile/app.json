@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tutor",
     "slug": "proactive-tutor",
-    "version": "2.1.2",
+    "version": "3.0.0",
     "newArchEnabled": false,
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
@@ -25,11 +25,14 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#2b2118"
-      }
+      },
+      "googleServicesFile": "./google-services.json"
     },
     "plugins": [
       "expo-notifications",
-      "expo-asset"
+      "expo-asset",
+      "expo-audio",
+      "expo-font"
     ],
     "extra": {
       "eas": {

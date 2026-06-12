@@ -2,6 +2,7 @@
 // so ANY failure - module evaluation, native bridge, render - shows readable
 // text instead of a crash or a blank screen. App.js's ErrorBoundary covers
 // render errors; this covers everything earlier and everything fatal.
+import 'react-native-gesture-handler';  // must be first for gesture support
 import React from 'react';
 import { registerRootComponent } from 'expo';
 import { ScrollView, Text } from 'react-native';
