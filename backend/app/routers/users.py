@@ -1,10 +1,12 @@
 """Learner identity + scheduling preferences (personal domain)."""
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, delete as sa_delete
 from sqlalchemy.orm import Session
 from ..db import get_db
-from ..models import User
-from ..schemas import UserCreate, UserUpdate, UserOut
+from ..models import User, NudgeWindow
+from ..schemas import (
+    UserCreate, UserUpdate, UserOut, ScheduleIn, NudgeWindowOut,
+)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -43,6 +45,34 @@ def update_user(user_id: int, body: UserUpdate, db: Session = Depends(get_db)):
         setattr(user, field, value)
     db.commit()
     return user
+
+
+@router.get("/{user_id}/schedule", response_model=list[NudgeWindowOut])
+def get_schedule(user_id: int, db: Session = Depends(get_db)):
+    """The nudge windows the user painted on the week grid."""
+    get_user_or_404(db, user_id)
+    return db.execute(
+        select(NudgeWindow).where(NudgeWindow.user_id == user_id)
+        .order_by(NudgeWindow.weekday, NudgeWindow.start_hour)
+    ).scalars().all()
+
+
+@router.put("/{user_id}/schedule", response_model=list[NudgeWindowOut])
+def put_schedule(user_id: int, body: ScheduleIn, db: Session = Depends(get_db)):
+    """Replace the whole week's nudge windows in one call (the grid saves
+    its entire state). Empty list = nudges allowed never -> effectively off."""
+    get_user_or_404(db, user_id)
+    for w in body.windows:
+        if w.end_hour <= w.start_hour:
+            raise HTTPException(422, f"Window must end after it starts: {w}")
+    db.execute(sa_delete(NudgeWindow).where(NudgeWindow.user_id == user_id))
+    for w in body.windows:
+        db.add(NudgeWindow(user_id=user_id, **w.model_dump()))
+    db.commit()
+    return db.execute(
+        select(NudgeWindow).where(NudgeWindow.user_id == user_id)
+        .order_by(NudgeWindow.weekday, NudgeWindow.start_hour)
+    ).scalars().all()
 
 
 @router.delete("/{user_id}")

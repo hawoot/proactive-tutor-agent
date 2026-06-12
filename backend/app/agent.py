@@ -350,6 +350,40 @@ FEEDBACK: <=3 sentences""", max_tokens=500)
     return True
 
 
+def followup_turn(db: Session, user: User, attempt: Attempt, text: str,
+                  modality: str = "text") -> None:
+    """The conversation continues AFTER marking: clarify the feedback, drill
+    into why the answer was right/wrong, explore variations. No re-marking,
+    no mastery changes - just understanding."""
+    ensure_question_message(db, attempt)
+    attempt.messages.append(AttemptMessage(
+        role="student", kind="chat", content=text, modality=modality))
+    db.flush()
+
+    enr = db.get(Enrollment, attempt.enrollment_id) if attempt.enrollment_id else None
+    bank_q = db.get(Question, attempt.question_id) if attempt.question_id else None
+    style = STYLE_RULES.get(enr.question_style if enr else "plain", STYLE_RULES["plain"])
+    trusted = f"Trusted model solution:\n{bank_q.answer}\n" if bank_q and bank_q.answer else ""
+    history = "\n".join(
+        f"{'TUTOR' if m.role == 'tutor' else 'STUDENT'}: {m.content[:400]}"
+        for m in attempt.messages[-CHAT_HISTORY_TURNS:]
+    )
+    spoken = ("\nNote: the student's message was SPOKEN and auto-transcribed - "
+              "interpret charitably.") if modality == "voice" else ""
+
+    reply = llm.ask(f"""You are a friendly expert tutor in a FOLLOW-UP conversation. The question
+has already been marked ({attempt.verdict}); the student wants to understand
+more - maybe they got it right but feel unsure, or the feedback was unclear.
+Question: {attempt.question}
+{trusted}Verdict given: {attempt.verdict}. Feedback given: {attempt.feedback}
+Conversation so far:
+{history}{spoken}
+
+Answer their follow-up clearly and concretely in <=6 sentences. You MAY now
+explain the full solution freely. {style}""", max_tokens=500)
+    attempt.messages.append(AttemptMessage(role="tutor", kind="chat", content=reply.strip()))
+
+
 def _parse_verdict(text: str) -> tuple[str, str]:
     verdict, feedback = "wrong", text
     for line in text.splitlines():

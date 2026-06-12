@@ -150,6 +150,19 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
 
 
+class NudgeWindow(Base):
+    """When the tutor MAY nudge: per-weekday hour windows in the user's
+    timezone (painted on the week grid in the app). No windows defined =
+    fall back to the legacy quiet-hours pair on the user row."""
+    __tablename__ = "nudge_windows"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    weekday: Mapped[int] = mapped_column(Integer)     # 0=Monday .. 6=Sunday
+    start_hour: Mapped[int] = mapped_column(Integer)  # inclusive, 0-23
+    end_hour: Mapped[int] = mapped_column(Integer)    # exclusive, 1-24
+
+
 class Device(Base):
     """A delivery endpoint. A user can have several (phone, telegram, console)."""
     __tablename__ = "devices"
