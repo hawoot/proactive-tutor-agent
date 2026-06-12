@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from . import config
 from .db import get_db, run_migrations
 from .security import require_api_key
-from .routers import users, devices, library, notes, enrollments, practice, progress
+from .routers import users, devices, library, notes, enrollments, practice, progress, today
 from . import seed as seed_module
 from . import scheduler
 
@@ -38,7 +38,7 @@ app.add_middleware(  # lets the Expo dev app call the API during development
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
 
-for r in (users, devices, library, notes, enrollments, practice, progress):
+for r in (users, devices, library, notes, enrollments, practice, progress, today):
     app.include_router(r.router)
 
 

@@ -139,6 +139,7 @@ class User(Base):
     quiet_hours_start: Mapped[int] = mapped_column(Integer, default=config.DEFAULT_QUIET_HOURS_START)
     quiet_hours_end: Mapped[int] = mapped_column(Integer, default=config.DEFAULT_QUIET_HOURS_END)
     max_prompts_per_day: Mapped[int] = mapped_column(Integer, default=config.DEFAULT_MAX_PROMPTS_PER_DAY)
+    daily_goal: Mapped[int] = mapped_column(Integer, default=3)  # answered questions/day target
     profile_note: Mapped[str] = mapped_column(Text, default="")  # LLM-derived semantic memory
     next_decision_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
