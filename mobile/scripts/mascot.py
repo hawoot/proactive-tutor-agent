@@ -278,21 +278,26 @@ def adaptive_icon(hero):
     return img
 
 
-def splash_icon(hero, name):
+def splash_icon(hero, name, sub=None):
     img = Image.new('RGBA', (1024 * S, 1024 * S), (0, 0, 0, 0))
-    mascot = hero().resize((560 * S, 560 * S), Image.LANCZOS)
-    img.alpha_composite(mascot, (232 * S, 160 * S))
+    mascot = hero().resize((540 * S, 540 * S), Image.LANCZOS)
+    img.alpha_composite(mascot, (242 * S, 150 * S))
     d = ImageDraw.Draw(img)
-    f = _font(140 * S)
+    f = _font(130 * S)
     tw = d.textlength(name, font=f)
-    d.text(((1024 * S - tw) / 2, 770 * S), name, font=f, fill=SAND)
+    d.text(((1024 * S - tw) / 2, 740 * S), name, font=f, fill=SAND)
+    if sub:
+        fs = _font(56 * S)
+        tw = d.textlength(sub, font=fs)
+        d.text(((1024 * S - tw) / 2, 905 * S), sub, font=fs, fill=GOLD)
     return img
 
 
 if __name__ == '__main__':
-    poses, hero, name = (NEJMA, nejma_wave, 'Nejma') if ACTIVE == 'nejma' else (PHIL, phil_wave, 'Phil')
+    poses, hero, name, sub = ((NEJMA, nejma_wave, 'Tnejjem', 'you can.') if ACTIVE == 'nejma'
+                              else (PHIL, phil_wave, 'Phil', None))
     for key, fn in poses.items():
         save(fn(), 'mascot', f'{key}.png')
     save(app_icon(hero), 'icon.png')
     save(adaptive_icon(hero), 'adaptive-icon.png')
-    save(splash_icon(hero, name), 'splash-icon.png')
+    save(splash_icon(hero, name, sub), 'splash-icon.png')

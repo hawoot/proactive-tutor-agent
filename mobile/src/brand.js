@@ -7,11 +7,12 @@
 // gives you the craftsman's title: ma'allem (معلّم).
 
 export const BRAND = {
-  appName: 'Nejma',
+  appName: 'Tnejjem',
   mascotName: 'Nejma',
-  tagline: 'Yes, you can. (Tnejjem!)',
-  story: 'Nejma means “star” in Tunisian — and tnejjem! is how you tell ' +
-    'someone “you’ve got this”. Same word. That’s not a coincidence.',
+  tagline: 'You can.',
+  story: '“Tnejjem!” (تنجّم) is Tunisian for “you can — you’ve got this.” ' +
+    'Your star is called Nejma: same root, because every time she shows up, ' +
+    'that’s the message.',
 };
 
 // Mascot poses. Keys are the vocabulary screens use; art is interchangeable.
