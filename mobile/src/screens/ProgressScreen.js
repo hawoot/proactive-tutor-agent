@@ -7,6 +7,7 @@ import { api, getConfig } from '../api';
 import { Card, Chip, Bar, ErrorText, EmptyState, SectionTitle } from '../components';
 import { colors, pad, type, utcDate, dayLabel } from '../theme';
 import { VERDICTS } from '../labels';
+import { masteryRank } from '../brand';
 
 export default function ProgressScreen() {
   const [enrollments, setEnrollments] = useState(null);
@@ -95,7 +96,9 @@ export default function ProgressScreen() {
                 <Text style={type.meta}>Answer a first question to start tracking.</Text>
               ) : skills.map((sk) => (
                 <View key={sk.skill_id} style={s.skillRow}>
-                  <Text style={s.skillName} numberOfLines={1}>{sk.name}</Text>
+                  <Text style={s.skillName} numberOfLines={1}>
+                    {sk.name}{masteryRank(sk.score) ? `  ·  ${masteryRank(sk.score)}` : ''}
+                  </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <Bar value={sk.score} height={8} />
                     <Text style={s.skillPct}>{Math.round(sk.score * 100)}%</Text>

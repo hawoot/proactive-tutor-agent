@@ -35,11 +35,12 @@ export const POLICY_LABELS = {
   },
 };
 
+// Phil's verdicts: "behi" = Tunisian for "nice" - his one word of home.
 export const VERDICTS = {
-  correct: { label: 'Correct!', emoji: '🎉', color: colors.good },
-  partial: { label: 'Almost there', emoji: '💪', color: colors.warn },
-  wrong: { label: 'Not quite', emoji: '📖', color: colors.bad },
-  skipped: { label: 'Skipped', emoji: '⏭️', color: colors.inkFaint },
+  correct: { label: 'Tnejjem! Nailed it', emoji: '🎉', color: colors.good, pose: 'celebrate' },
+  partial: { label: 'So close', emoji: '💪', color: colors.warn, pose: 'coach' },
+  wrong: { label: 'Not yet — let’s fix that', emoji: '📖', color: colors.bad, pose: 'coach' },
+  skipped: { label: 'Skipped', emoji: '⏭️', color: colors.inkFaint, pose: 'think' },
 };
 
 export const EFFORT_LABELS = { quick: '⚡ quick', deep: '🧠 deep' };

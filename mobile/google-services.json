@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "107408694796",
+    "project_id": "proactive-tutor",
+    "storage_bucket": "proactive-tutor.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:107408694796:android:2c44f80da6f36c2397d829",
+        "android_client_info": {
+          "package_name": "com.nidhal.proactivetutor"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8IB0MIq3RTp688-mLrg4teIN8CBtUw-M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

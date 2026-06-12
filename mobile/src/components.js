@@ -1,11 +1,31 @@
 // The shared UI kit: chunky playful buttons, soft cards, chips, bars,
 // bottom sheets. Every screen builds from these so the app feels coherent.
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ActivityIndicator, Modal,
-  ScrollView, StyleSheet, KeyboardAvoidingView, Platform,
+  ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Animated, Image,
 } from 'react-native';
 import { colors, radius, pad, type } from './theme';
+import { MASCOT } from './brand';
+
+// Phil himself. A slow idle bob - alive, never distracting.
+export function Mascot({ pose = 'wave', size = 96, bob = true, style }) {
+  const y = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!bob) return;
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(y, { toValue: -4, duration: 1600, useNativeDriver: true }),
+      Animated.timing(y, { toValue: 0, duration: 1600, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [bob, y]);
+  return (
+    <Animated.View style={[{ transform: [{ translateY: y }] }, style]}>
+      <Image source={MASCOT[pose] || MASCOT.wave} style={{ width: size, height: size }} resizeMode="contain" />
+    </Animated.View>
+  );
+}
 
 const BTN_COLORS = {
   primary: [colors.primary, colors.primaryDark],
@@ -95,10 +115,10 @@ export function SectionTitle({ children, right }) {
   );
 }
 
-export function EmptyState({ emoji, title, hint }) {
+export function EmptyState({ emoji, pose, title, hint }) {
   return (
     <View style={s.empty}>
-      <Text style={{ fontSize: 44 }}>{emoji}</Text>
+      {pose ? <Mascot pose={pose} size={110} /> : <Text style={{ fontSize: 44 }}>{emoji}</Text>}
       <Text style={[type.title, { marginTop: 8, textAlign: 'center' }]}>{title}</Text>
       {hint ? <Text style={[type.meta, { marginTop: 4, textAlign: 'center' }]}>{hint}</Text> : null}
     </View>
