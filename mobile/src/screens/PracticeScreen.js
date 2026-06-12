@@ -1,51 +1,75 @@
-// The practice FLOW: one thing per screen. Question -> marking -> a proper
-// verdict moment -> continue or done. Pushed full-screen from Today.
-import React, { useCallback, useEffect, useState } from 'react';
+// Practice = a mini-conversation about ONE question. Answer if you can;
+// say you're stuck and the tutor coaches without dumping the solution.
+// A real answer gets marked, closes the question, and moves your mastery.
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, KeyboardAvoidingView, Platform,
+  View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet,
+  KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { api, getConfig } from '../api';
-import { Btn, Card, Chip, Field, ErrorText, EmptyState } from '../components';
-import { colors, pad, type } from '../theme';
+import { Btn, Chip, ErrorText, EmptyState } from '../components';
+import { colors, pad, radius, type } from '../theme';
 import { VERDICTS } from '../labels';
+
+const QUICK_REPLIES = [
+  { label: '💡 Hint', text: 'Can you give me a small hint, not the answer?' },
+  { label: '🤔 I’m stuck', text: "I'm stuck - I don't know how to start." },
+  { label: '📖 Show me', text: 'Please show me the full solution and walk me through it.' },
+];
 
 export default function PracticeScreen({ route, navigation }) {
   const effort = route.params?.effort || null;
-  const [phase, setPhase] = useState('loading'); // loading | question | marking | result | error
+  const [phase, setPhase] = useState('loading'); // loading | chat | error
   const [attempt, setAttempt] = useState(null);
-  const [result, setResult] = useState(null);
-  const [answer, setAnswer] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [closed, setClosed] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [thinking, setThinking] = useState(false);
   const [err, setErr] = useState('');
   const [goal, setGoal] = useState(null);
+  const scrollRef = useRef(null);
 
-  const fetchQuestion = useCallback(async (forcedEffort) => {
-    setPhase('loading'); setErr(''); setAnswer('');
+  const applyResponse = (r) => {
+    setAttempt(r.attempt);
+    setMessages(r.messages);
+    setClosed(r.closed);
+  };
+
+  const start = useCallback(async () => {
+    setPhase('loading'); setErr(''); setGoal(null); setDraft('');
     try {
       const { userId } = await getConfig();
       let a = await api.openQuestion(userId);
-      if (!a) {
-        a = await api.newQuestion(userId, forcedEffort ? { effort: forcedEffort } : {});
-      }
-      setAttempt(a);
-      setPhase('question');
+      if (!a) a = await api.newQuestion(userId, effort ? { effort } : {});
+      applyResponse(await api.chatMessages(userId, a.id));
+      setPhase('chat');
     } catch (e) { setErr(e.message); setPhase('error'); }
-  }, []);
+  }, [effort]);
 
-  useEffect(() => { fetchQuestion(effort); }, [fetchQuestion, effort]);
+  useEffect(() => { start(); }, [start]);
 
-  const submit = async () => {
-    if (!answer.trim()) return;
-    setPhase('marking'); setErr('');
+  useEffect(() => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+  }, [messages, thinking]);
+
+  const send = async (text) => {
+    const content = (text ?? draft).trim();
+    if (!content || thinking) return;
+    setErr(''); setDraft(''); setThinking(true);
+    // optimistic: show the student's bubble immediately
+    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: 'student', kind: 'chat', content }]);
     try {
       const { userId } = await getConfig();
-      const r = await api.answer(userId, answer.trim());
-      setResult(r);
-      try {
-        const t = await api.today(userId);
-        setGoal({ done: t.answered_today, target: t.daily_goal, streak: t.streak_days });
-      } catch {}
-      setPhase('result');
-    } catch (e) { setErr(e.message); setPhase('question'); }
+      const r = await api.chat(userId, content, { attempt_id: attempt?.id });
+      applyResponse(r);
+      if (r.closed) {
+        try {
+          const t = await api.today(userId);
+          setGoal({ done: t.answered_today, target: t.daily_goal, streak: t.streak_days });
+        } catch {}
+      }
+    } catch (e) { setErr(e.message); }
+    setThinking(false);
   };
 
   const skip = async () => {
@@ -56,77 +80,172 @@ export default function PracticeScreen({ route, navigation }) {
     } catch (e) { setErr(e.message); }
   };
 
+  const comingSoon = () => Alert.alert(
+    'Coming in the next app build',
+    'Voice answers and photo uploads need microphone/camera access, which ships with the next app version.');
+
   if (phase === 'loading') {
     return <View style={s.root}><EmptyState emoji="✏️" title="Picking your question…" /></View>;
   }
-
   if (phase === 'error') {
     return (
       <View style={s.root}>
         <View style={{ padding: pad }}>
           <EmptyState emoji="🤔" title="No question right now" hint={err} />
-          <Btn label="Try again" onPress={() => fetchQuestion(effort)} />
+          <Btn label="Try again" onPress={start} />
           <Btn label="Back" kind="ghost" onPress={() => navigation.goBack()} />
         </View>
       </View>
     );
   }
 
-  if (phase === 'result' && result) {
-    const v = VERDICTS[result.verdict] || VERDICTS.skipped;
-    return (
-      <ScrollView style={s.root} contentContainerStyle={{ padding: pad, paddingBottom: 40 }}>
-        <View style={[s.verdictBanner, { backgroundColor: v.color + '1A', borderColor: v.color }]}>
-          <Text style={{ fontSize: 52 }}>{v.emoji}</Text>
-          <Text style={[s.verdictText, { color: v.color }]}>{v.label}</Text>
-        </View>
-        <Card>
-          <Text style={type.label}>Feedback</Text>
-          <Text style={[type.body, { marginTop: 6 }]}>{result.feedback || 'Marked.'}</Text>
-        </Card>
-        {goal ? (
-          <Text style={s.goalNote}>
-            {goal.done >= goal.target
-              ? `🎯 Daily goal complete · 🔥 ${goal.streak}-day streak`
-              : `${goal.done} of ${goal.target} today · 🔥 ${goal.streak}-day streak`}
-          </Text>
-        ) : null}
-        <Btn label="Another question" onPress={() => { setResult(null); fetchQuestion(effort); }} />
-        <Btn label="Done for now" kind="outline" onPress={() => navigation.goBack()} />
-      </ScrollView>
-    );
-  }
+  const verdict = closed ? (VERDICTS[attempt?.verdict] || VERDICTS.skipped) : null;
 
-  // question / marking
   return (
     <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={{ padding: pad, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
+      {/* context chips */}
+      <View style={s.chipRow}>
+        {attempt?.skill_name ? <Chip text={attempt.skill_name} color={colors.blue} /> : null}
+        <Chip text={attempt?.from_bank ? 'curated' : 'AI-generated'}
+          color={attempt?.from_bank ? colors.good : colors.purple} />
+        {attempt?.source === 'scheduled' ? <Chip text="from your tutor" color={colors.orange} /> : null}
+      </View>
+
+      <ScrollView ref={scrollRef} style={{ flex: 1 }}
+        contentContainerStyle={{ padding: pad, paddingTop: 6 }}
+        keyboardShouldPersistTaps="handled">
         <ErrorText>{err}</ErrorText>
-        <View style={s.chipRow}>
-          {attempt?.skill_name ? <Chip text={attempt.skill_name} color={colors.blue} /> : null}
-          <Chip text={attempt?.from_bank ? 'curated' : 'AI-generated'}
-            color={attempt?.from_bank ? colors.good : colors.purple} />
-          {attempt?.source === 'scheduled' ? <Chip text="from your tutor" color={colors.orange} /> : null}
-        </View>
-        <Card>
-          <Text style={s.question}>{attempt?.question}</Text>
-        </Card>
-        <Field value={answer} onChangeText={setAnswer} multiline
-          placeholder="Type your answer…" autoCapitalize="none" />
-        <Btn label={phase === 'marking' ? 'Marking…' : 'Submit'} onPress={submit} busy={phase === 'marking'} />
-        <Btn label="Skip this one (no penalty)" kind="ghost" onPress={skip} />
+        {messages.map((m) => <Bubble key={m.id} m={m} />)}
+        {thinking ? (
+          <View style={[s.bubble, s.tutorBubble]}>
+            <Text style={s.thinking}>tutor is thinking…</Text>
+          </View>
+        ) : null}
+
+        {closed && verdict ? (
+          <>
+            <View style={[s.verdictBanner, { backgroundColor: verdict.color + '1A', borderColor: verdict.color }]}>
+              <Text style={{ fontSize: 40 }}>{verdict.emoji}</Text>
+              <Text style={[s.verdictText, { color: verdict.color }]}>{verdict.label}</Text>
+              {goal ? (
+                <Text style={s.goalNote}>
+                  {goal.done >= goal.target
+                    ? `🎯 Daily goal complete · 🔥 ${goal.streak}-day streak`
+                    : `${goal.done} of ${goal.target} today · 🔥 ${goal.streak}-day streak`}
+                </Text>
+              ) : null}
+            </View>
+            <Btn label="Another question" onPress={start} />
+            <Btn label="Done for now" kind="outline" onPress={() => navigation.goBack()} />
+          </>
+        ) : null}
       </ScrollView>
+
+      {!closed && (
+        <View style={s.composer}>
+          <View style={s.quickRow}>
+            {QUICK_REPLIES.map((q) => (
+              <TouchableOpacity key={q.label} style={s.quickChip} onPress={() => send(q.text)}>
+                <Text style={s.quickText}>{q.label}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={s.quickChip} onPress={skip}>
+              <Text style={s.quickText}>⏭️ Skip</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={s.inputRow}>
+            <TouchableOpacity style={s.iconBtn} onPress={comingSoon}>
+              <Text style={s.iconDisabled}>🎤</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.iconBtn} onPress={comingSoon}>
+              <Text style={s.iconDisabled}>📷</Text>
+            </TouchableOpacity>
+            <TextInput
+              style={s.input} value={draft} onChangeText={setDraft} multiline
+              placeholder="Answer, or ask about it…" placeholderTextColor={colors.inkFaint}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              style={[s.sendBtn, (!draft.trim() || thinking) && { opacity: 0.4 }]}
+              onPress={() => send()} disabled={!draft.trim() || thinking}
+            >
+              <Text style={s.sendText}>➤</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </KeyboardAvoidingView>
+  );
+}
+
+function Bubble({ m }) {
+  const student = m.role === 'student';
+  const isQuestion = m.kind === 'question';
+  return (
+    <View style={[
+      s.bubble,
+      student ? s.studentBubble : s.tutorBubble,
+      isQuestion && s.questionBubble,
+    ]}>
+      {isQuestion ? <Text style={s.questionLabel}>QUESTION</Text> : null}
+      <Text style={[s.bubbleText, student && { color: '#fff' },
+        isQuestion && { fontSize: 17, lineHeight: 25, fontWeight: '500' }]}>
+        {m.content}
+      </Text>
+      {m.modality === 'voice' ? <Text style={s.voiceTag}>🎤 spoken</Text> : null}
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 },
-  question: { fontSize: 18, lineHeight: 27, color: colors.ink, fontWeight: '500' },
-  verdictBanner: {
-    alignItems: 'center', padding: 22, borderRadius: 22, borderWidth: 2, marginBottom: 10,
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: pad, paddingTop: 8 },
+  bubble: {
+    maxWidth: '86%', borderRadius: radius.lg, padding: 12, marginVertical: 4,
   },
-  verdictText: { fontSize: 24, fontWeight: '800', marginTop: 6 },
-  goalNote: { textAlign: 'center', color: colors.inkSoft, fontWeight: '600', marginVertical: 8 },
+  tutorBubble: {
+    alignSelf: 'flex-start', backgroundColor: colors.bgSoft,
+    borderWidth: 2, borderColor: colors.line, borderBottomLeftRadius: 6,
+  },
+  studentBubble: {
+    alignSelf: 'flex-end', backgroundColor: colors.blue, borderBottomRightRadius: 6,
+  },
+  questionBubble: {
+    backgroundColor: colors.card, borderColor: colors.blue, maxWidth: '100%',
+    alignSelf: 'stretch',
+  },
+  questionLabel: { fontSize: 11, fontWeight: '800', color: colors.blueDark, marginBottom: 4, letterSpacing: 1 },
+  bubbleText: { fontSize: 15.5, lineHeight: 22, color: colors.ink },
+  voiceTag: { fontSize: 11, color: '#ffffffcc', marginTop: 4 },
+  thinking: { color: colors.inkSoft, fontStyle: 'italic' },
+  verdictBanner: {
+    alignItems: 'center', padding: 18, borderRadius: 22, borderWidth: 2, marginVertical: 10,
+  },
+  verdictText: { fontSize: 22, fontWeight: '800', marginTop: 4 },
+  goalNote: { color: colors.inkSoft, fontWeight: '600', marginTop: 6 },
+  composer: {
+    borderTopWidth: 2, borderTopColor: colors.line, backgroundColor: colors.bg,
+    paddingHorizontal: 10, paddingTop: 8, paddingBottom: 10,
+  },
+  quickRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 },
+  quickChip: {
+    borderWidth: 2, borderColor: colors.line, borderRadius: radius.pill,
+    paddingHorizontal: 12, paddingVertical: 6, marginRight: 8, marginBottom: 4,
+    backgroundColor: colors.card,
+  },
+  quickText: { fontSize: 13, fontWeight: '700', color: colors.ink },
+  inputRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  iconBtn: { padding: 8 },
+  iconDisabled: { fontSize: 20, opacity: 0.35 },
+  input: {
+    flex: 1, backgroundColor: colors.card, borderWidth: 2, borderColor: colors.line,
+    borderRadius: radius.lg, paddingHorizontal: 14, paddingVertical: 10,
+    fontSize: 16, color: colors.ink, maxHeight: 120,
+  },
+  sendBtn: {
+    marginLeft: 8, backgroundColor: colors.primary, borderRadius: radius.pill,
+    width: 44, height: 44, alignItems: 'center', justifyContent: 'center',
+    borderBottomWidth: 3, borderBottomColor: colors.primaryDark,
+  },
+  sendText: { color: '#fff', fontSize: 18, fontWeight: '800' },
 });

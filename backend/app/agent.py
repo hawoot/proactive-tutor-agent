@@ -12,7 +12,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from . import llm
-from .models import utcnow, User, Enrollment, Skill, SkillState, Attempt, Question
+from .models import (
+    utcnow, User, Enrollment, Skill, SkillState, Attempt, AttemptMessage, Question,
+)
 from .retrieval import ContextRetriever, maybe_update_profile
 
 
@@ -270,21 +272,108 @@ def ask_question(db: Session, user: User, enrollments: list[Enrollment],
     return attempt
 
 
-def handle_answer(db: Session, attempt: Attempt, answer: str) -> Attempt:
-    """Mark the answer, close the attempt, update the adaptive state and
-    (periodically) the semantic memory."""
+def ensure_question_message(db: Session, attempt: Attempt) -> None:
+    """Lazily seed the conversation with the question itself (also covers
+    attempts created before conversations existed)."""
+    if not attempt.messages:
+        attempt.messages.append(AttemptMessage(
+            role="tutor", kind="question", content=attempt.question))
+        db.flush()
+
+
+CHAT_HISTORY_TURNS = 12
+
+
+def chat_turn(db: Session, user: User, attempt: Attempt, text: str,
+              modality: str = "text") -> bool:
+    """One student message in the mini-conversation about the open question.
+    The LLM decides: a final answer gets MARKED (closes the attempt, updates
+    mastery); anything else gets COACHED - Socratic, no answer-dumping unless
+    the student explicitly asks to see the solution. Returns True if closed."""
+    ensure_question_message(db, attempt)
+    attempt.messages.append(AttemptMessage(
+        role="student", kind="chat", content=text, modality=modality))
+    db.flush()
+
     enr = db.get(Enrollment, attempt.enrollment_id) if attempt.enrollment_id else None
     bank_q = db.get(Question, attempt.question_id) if attempt.question_id else None
-    verdict, feedback = mark_answer(
-        attempt.question, answer,
-        strictness=enr.marking_strictness if enr else "balanced",
-        model_answer=bank_q.answer if bank_q else "",
-        commentary=bank_q.commentary if bank_q else "")
+    rubric = MARKING_RUBRICS.get(
+        enr.marking_strictness if enr else "balanced", MARKING_RUBRICS["balanced"])
+    style = STYLE_RULES.get(enr.question_style if enr else "plain", STYLE_RULES["plain"])
+
+    trusted = ""
+    if bank_q and bank_q.answer:
+        trusted = (f"Trusted model solution (use it to coach and to mark; never "
+                   f"paste it wholesale unless the student asks to see the solution):\n"
+                   f"{bank_q.answer}\n")
+        if bank_q.commentary:
+            trusted += f"Marking guidance: {bank_q.commentary}\n"
+
+    history = "\n".join(
+        f"{'TUTOR' if m.role == 'tutor' else 'STUDENT'}: {m.content[:400]}"
+        for m in attempt.messages[-CHAT_HISTORY_TURNS:]
+    )
+    spoken = ("\nNote: the student's message was SPOKEN and auto-transcribed - "
+              "tolerate homophones, missing symbols and notation artifacts; "
+              "interpret charitably.") if modality == "voice" else ""
+
+    out = llm.ask(f"""You are a friendly expert tutor in a short conversation about ONE practice question.
+Question: {attempt.question}
+{trusted}Conversation so far:
+{history}{spoken}
+
+Decide what the student's latest message is:
+- A FINAL ANSWER to the question -> mark it against the rubric: {rubric}
+- Anything else (stuck, confused, asking for a hint, partial thinking, asking to
+  see the solution) -> coach: reply in <=4 sentences, Socratic - guide the next
+  step, do NOT give the full solution unless they explicitly ask to be shown it.
+{style}
+Reply EXACTLY in one of these two formats:
+MODE: COACH
+<your reply>
+--- or ---
+MODE: MARK
+VERDICT: correct | partial | wrong
+FEEDBACK: <=3 sentences""", max_tokens=500)
+
+    mode = "MARK" if ("MODE: MARK" in out or (
+        "MODE:" not in out and "VERDICT" in out)) else "COACH"
+
+    if mode == "COACH":
+        reply = out.split("MODE: COACH", 1)[-1].strip() if "MODE: COACH" in out else out.strip()
+        attempt.messages.append(AttemptMessage(
+            role="tutor", kind="chat", content=reply))
+        return False
+
+    verdict, feedback = _parse_verdict(out)
+    _close_attempt(db, attempt, enr, text, verdict, feedback)
+    return True
+
+
+def _parse_verdict(text: str) -> tuple[str, str]:
+    verdict, feedback = "wrong", text
+    for line in text.splitlines():
+        low = line.lower()
+        if low.startswith("verdict"):
+            if "partial" in low:
+                verdict = "partial"
+            elif "incorrect" in low or "wrong" in low:
+                verdict = "wrong"
+            elif "correct" in low:
+                verdict = "correct"
+        elif low.startswith("feedback"):
+            feedback = line.split(":", 1)[-1].strip() or text
+    return verdict, feedback
+
+
+def _close_attempt(db: Session, attempt: Attempt, enr: Enrollment | None,
+                   answer: str, verdict: str, feedback: str) -> None:
     attempt.answer = answer
     attempt.verdict = verdict
     attempt.feedback = feedback
     attempt.answered_at = utcnow()
-
+    attempt.messages.append(AttemptMessage(
+        role="tutor", kind="feedback", content=feedback))
     if attempt.skill_id and enr:
         st = db.execute(
             select(SkillState).where(
@@ -294,8 +383,23 @@ def handle_answer(db: Session, attempt: Attempt, answer: str) -> Attempt:
         ).scalars().first()
         if st:
             update_skill_state(st, verdict)
-
     user = db.get(User, attempt.user_id)
     if user:
         maybe_update_profile(db, user)
+
+
+def handle_answer(db: Session, attempt: Attempt, answer: str) -> Attempt:
+    """Direct mark path (no coaching round-trip): mark, close, update the
+    adaptive state. Records the exchange in the conversation log too."""
+    ensure_question_message(db, attempt)
+    attempt.messages.append(AttemptMessage(
+        role="student", kind="answer", content=answer))
+    enr = db.get(Enrollment, attempt.enrollment_id) if attempt.enrollment_id else None
+    bank_q = db.get(Question, attempt.question_id) if attempt.question_id else None
+    verdict, feedback = mark_answer(
+        attempt.question, answer,
+        strictness=enr.marking_strictness if enr else "balanced",
+        model_answer=bank_q.answer if bank_q else "",
+        commentary=bank_q.commentary if bank_q else "")
+    _close_attempt(db, attempt, enr, answer, verdict, feedback)
     return attempt

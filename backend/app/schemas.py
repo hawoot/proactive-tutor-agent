@@ -239,6 +239,28 @@ class AttemptOut(ORM):
     from_bank: bool = False  # True = curated bank question; False = LLM-generated
 
 
+class MessageOut(ORM):
+    id: int
+    role: str       # tutor | student
+    kind: str       # question | chat | answer | feedback
+    content: str
+    modality: str
+    created_at: datetime
+
+
+class ChatRequest(BaseModel):
+    user_id: int
+    text: str
+    attempt_id: int | None = None              # default: the open attempt
+    modality: Literal["text", "voice"] = "text"  # voice = transcribed speech
+
+
+class ChatResponse(BaseModel):
+    attempt: AttemptOut
+    messages: list[MessageOut]
+    closed: bool  # True once the answer has been marked
+
+
 # --- question bank ----------------------------------------------------------------
 
 class QuestionCreate(BaseModel):

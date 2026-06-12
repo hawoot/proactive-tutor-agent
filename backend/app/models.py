@@ -226,7 +226,8 @@ class SkillState(Base):
 
 
 class Attempt(Base):
-    """Append-only Q/A event log. Never updated except to record the answer."""
+    """One question's lifecycle. The conversation about it lives in
+    AttemptMessage rows; verdict/feedback land here when it closes."""
     __tablename__ = "attempts"
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(
@@ -246,7 +247,26 @@ class Attempt(Base):
     answered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     skill: Mapped[Skill | None] = relationship()
+    messages: Mapped[list["AttemptMessage"]] = relationship(
+        back_populates="attempt", cascade="all, delete-orphan", passive_deletes=True,
+        order_by="AttemptMessage.id")
     __table_args__ = (Index("ix_attempts_user_open", "user_id", "verdict"),)
+
+
+class AttemptMessage(Base):
+    """One turn in the mini-conversation about a question: the question
+    itself, coaching exchanges, the final answer, and the feedback."""
+    __tablename__ = "attempt_messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    attempt_id: Mapped[int] = mapped_column(
+        ForeignKey("attempts.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(10))                 # tutor | student
+    kind: Mapped[str] = mapped_column(String(12), default="chat")  # question | chat | answer | feedback
+    content: Mapped[str] = mapped_column(Text, default="")
+    modality: Mapped[str] = mapped_column(String(10), default="text")  # text | voice (transcribed)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    attempt: Mapped[Attempt] = relationship(back_populates="messages")
 
 
 class Note(Base):

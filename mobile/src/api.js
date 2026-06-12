@@ -101,6 +101,9 @@ export const api = {
   openQuestion: (uid) => call('GET', `/practice/open?user_id=${uid}`),
   newQuestion: (uid, opts = {}) => call('POST', '/practice/question', { user_id: uid, ...opts }),
   answer: (uid, text) => call('POST', '/practice/answer', { user_id: uid, text }),
+  chat: (uid, text, opts = {}) => call('POST', '/practice/chat', { user_id: uid, text, ...opts }),
+  chatMessages: (uid, attemptId) =>
+    call('GET', `/practice/messages?user_id=${uid}${attemptId ? `&attempt_id=${attemptId}` : ''}`),
   skip: (uid) => call('POST', `/practice/skip?user_id=${uid}`),
 
   // question bank
