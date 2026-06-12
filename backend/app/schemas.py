@@ -29,6 +29,7 @@ class UserUpdate(BaseModel):
     quiet_hours_start: int | None = Field(None, ge=0, le=23)
     quiet_hours_end: int | None = Field(None, ge=0, le=23)
     max_prompts_per_day: int | None = Field(None, ge=0, le=48)
+    daily_goal: int | None = Field(None, ge=1, le=50)
     profile_note: str | None = None
 
 
@@ -39,6 +40,7 @@ class UserOut(ORM):
     quiet_hours_start: int
     quiet_hours_end: int
     max_prompts_per_day: int
+    daily_goal: int
     profile_note: str
     next_decision_at: datetime | None
 

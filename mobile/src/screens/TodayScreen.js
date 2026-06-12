@@ -1,118 +1,194 @@
-// The practice loop: see the open question (pushed or pulled), answer, get marked.
+// Home = the agent's plan, made visible. Streak + daily goal up top, ONE
+// hero action, then the timeline: what's coming, what just happened.
 import React, { useCallback, useState } from 'react';
-import {
-  View, Text, ScrollView, RefreshControl, StyleSheet,
-  KeyboardAvoidingView, Platform,
-} from 'react-native';
+import { View, Text, ScrollView, RefreshControl, StyleSheet, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, getConfig } from '../api';
-import { Btn, Card, Field, Tag, ErrorText, EmptyText } from '../components';
-import { colors, pad } from '../theme';
+import { Btn, Card, Chip, Bar, ErrorText, EmptyState, SectionTitle } from '../components';
+import { colors, pad, type, timeOfDay, dayLabel } from '../theme';
+import { VERDICTS } from '../labels';
 
-export default function TodayScreen() {
-  const [attempt, setAttempt] = useState(null); // the open question, if any
-  const [lastResult, setLastResult] = useState(null); // last marked attempt
-  const [answer, setAnswer] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+export default function TodayScreen({ navigation }) {
+  const [data, setData] = useState(null);
   const [err, setErr] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     setErr('');
     try {
       const { userId } = await getConfig();
-      setAttempt(await api.openQuestion(userId));
+      setData(await api.today(userId));
     } catch (e) { setErr(e.message); }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
-
   const refresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
-  const ask = async (effort) => {
-    setBusy(true); setErr(''); setLastResult(null);
-    try {
-      const { userId } = await getConfig();
-      setAttempt(await api.newQuestion(userId, effort ? { effort } : {}));
-    } catch (e) { setErr(e.message); }
-    setBusy(false);
-  };
+  const practice = (effort) => navigation.navigate('Practice', { effort });
 
-  const submit = async () => {
-    if (!answer.trim()) return;
-    setBusy(true); setErr('');
-    try {
-      const { userId } = await getConfig();
-      const r = await api.answer(userId, answer.trim());
-      setLastResult(r);
-      setAttempt(null);
-      setAnswer('');
-    } catch (e) { setErr(e.message); }
-    setBusy(false);
-  };
-
-  const skip = async () => {
-    setBusy(true); setErr('');
-    try {
-      const { userId } = await getConfig();
-      await api.skip(userId);
-      setAttempt(null);
-    } catch (e) { setErr(e.message); }
-    setBusy(false);
-  };
-
-  const verdictColor = { correct: colors.good, partial: colors.warn, wrong: colors.bad };
+  const goalDone = data && data.answered_today >= data.daily_goal;
 
   return (
-    <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView
-        contentContainerStyle={{ padding: pad, paddingBottom: 32 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
-        keyboardShouldPersistTaps="handled"
-      >
-        <ErrorText>{err}</ErrorText>
+    <ScrollView
+      style={s.root}
+      contentContainerStyle={{ padding: pad, paddingBottom: 40 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
+    >
+      <ErrorText>{err}</ErrorText>
+      {!data && !err ? <EmptyState emoji="⏳" title="Loading your day…" /> : null}
 
-        {attempt ? (
-          <>
-            <View style={s.row}>
-              {attempt.skill_name ? <Tag text={attempt.skill_name} color={colors.shared} /> : null}
-              <Tag text={attempt.source === 'scheduled' ? 'nudged' : 'on demand'} />
-              <Tag text={attempt.from_bank ? 'curated' : 'generated'}
-                color={attempt.from_bank ? colors.good : colors.personal} />
+      {data && (
+        <>
+          {/* streak + daily goal */}
+          <View style={s.statsRow}>
+            <View style={s.streakBox}>
+              <Text style={s.streakEmoji}>🔥</Text>
+              <Text style={s.streakNum}>{data.streak_days}</Text>
+              <Text style={s.streakLabel}>day streak</Text>
             </View>
-            <Card><Text style={s.question}>{attempt.question}</Text></Card>
-            <Field value={answer} onChangeText={setAnswer} placeholder="Your answer…" multiline />
-            <Btn label="Submit answer" onPress={submit} busy={busy} />
-            <Btn label="Skip (no penalty)" onPress={skip} kind="secondary" busy={busy} />
-          </>
-        ) : (
-          <>
-            {lastResult ? (
-              <Card>
-                <Text style={[s.verdict, { color: verdictColor[lastResult.verdict] || colors.ink }]}>
-                  {(lastResult.verdict || '').toUpperCase()}
-                </Text>
-                <Text style={s.feedback}>{lastResult.feedback}</Text>
-              </Card>
-            ) : (
-              <EmptyText>
-                No open question. The agent will nudge you when it's time - or pull one now.
-              </EmptyText>
-            )}
-            <Btn label="Quick question" onPress={() => ask('quick')} busy={busy} />
-            <Btn label="Deep question" onPress={() => ask('deep')} kind="secondary" busy={busy} />
-            <Btn label="Any question" onPress={() => ask(null)} kind="secondary" busy={busy} />
-          </>
-        )}
-      </ScrollView>
-    </KeyboardAvoidingView>
+            <View style={s.goalBox}>
+              <Text style={s.goalText}>
+                {goalDone ? '🎯 Daily goal done!' : `Today: ${data.answered_today} / ${data.daily_goal}`}
+              </Text>
+              <Bar value={data.answered_today / Math.max(data.daily_goal, 1)} color={colors.primary} height={14} />
+            </View>
+          </View>
+
+          {/* hero: the one thing to do now */}
+          {!data.has_active_enrollment ? (
+            <Card tint={colors.blue}>
+              <Text style={s.heroTitle}>👋 Welcome!</Text>
+              <Text style={type.body}>Pick a course and your tutor starts planning your practice.</Text>
+              <Btn label="Browse courses" color="blue" onPress={() => navigation.navigate('Courses')} />
+            </Card>
+          ) : data.open_attempt ? (
+            <Card tint={colors.primary}>
+              <View style={s.chipRow}>
+                {data.open_attempt.skill_name ? <Chip text={data.open_attempt.skill_name} color={colors.blue} /> : null}
+                <Chip text={data.open_attempt.from_bank ? 'curated' : 'AI-generated'}
+                  color={data.open_attempt.from_bank ? colors.good : colors.purple} />
+              </View>
+              <Text style={s.heroTitle}>A question is waiting</Text>
+              <Text style={type.body} numberOfLines={3}>{data.open_attempt.question}</Text>
+              <Btn label="Answer now" onPress={() => practice(null)} />
+            </Card>
+          ) : data.due_now > 0 ? (
+            <Card tint={colors.orange}>
+              <Text style={s.heroTitle}>📚 {data.due_now} skill{data.due_now > 1 ? 's' : ''} ready for review</Text>
+              <Text style={type.body}>Reviewing on time is what makes it stick.</Text>
+              <Btn label="Practice now" color="orange" onPress={() => practice(null)} />
+            </Card>
+          ) : (
+            <Card tint={colors.primary}>
+              <Text style={s.heroTitle}>✅ All caught up</Text>
+              <Text style={type.body}>
+                {data.next_nudge_at
+                  ? `Your tutor plans to ping you around ${timeOfDay(data.next_nudge_at)}.`
+                  : 'Your tutor will schedule the next nudge shortly.'}
+              </Text>
+              <Btn label="Practice anyway" kind="outline" onPress={() => practice(null)} />
+            </Card>
+          )}
+
+          {/* quick/deep on-demand */}
+          {data.has_active_enrollment && !data.open_attempt ? (
+            <View style={s.quickRow}>
+              <TouchableOpacity style={s.quickBtn} onPress={() => practice('quick')}>
+                <Text style={s.quickText}>⚡ Quick one</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.quickBtn} onPress={() => practice('deep')}>
+                <Text style={s.quickText}>🧠 Deep dive</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {/* timeline: coming up */}
+          <SectionTitle>Coming up</SectionTitle>
+          {data.next_nudge_at ? (
+            <TimelineItem emoji="⏰" color={colors.blue}
+              title={`Next nudge ~ ${timeOfDay(data.next_nudge_at)}`}
+              sub="Your tutor decides then whether to ping you" />
+          ) : null}
+          {data.due_today > data.due_now ? (
+            <TimelineItem emoji="📚" color={colors.orange}
+              title={`${data.due_today - data.due_now} more review${data.due_today - data.due_now > 1 ? 's' : ''} due later today`}
+              sub="They'll appear here when ready" />
+          ) : null}
+          {data.exams.map((e) => (
+            <TimelineItem key={e.enrollment_id} emoji="🎯"
+              color={e.days_left <= 7 ? colors.red : e.days_left <= 30 ? colors.orange : colors.purple}
+              title={`${e.days_left} days until your ${e.program_title} exam`}
+              sub={e.days_left <= 30 ? 'Nudges are ramping up' : 'Plenty of runway - keep the streak'} />
+          ))}
+          {!data.next_nudge_at && data.due_today === 0 && data.exams.length === 0 ? (
+            <Text style={type.meta}>Nothing scheduled yet - enroll in a course or practice on demand.</Text>
+          ) : null}
+
+          {/* timeline: earlier */}
+          {data.recent.length > 0 && (
+            <>
+              <SectionTitle>Earlier</SectionTitle>
+              {data.recent.map((a) => {
+                const v = VERDICTS[a.verdict] || VERDICTS.skipped;
+                return (
+                  <TimelineItem key={a.id} emoji={v.emoji} color={v.color}
+                    title={a.skill_name || 'Practice question'}
+                    sub={`${v.label} · ${dayLabel(a.answered_at || a.asked_at)}`} />
+                );
+              })}
+            </>
+          )}
+        </>
+      )}
+    </ScrollView>
+  );
+}
+
+function TimelineItem({ emoji, color, title, sub }) {
+  return (
+    <View style={s.tlRow}>
+      <View style={s.tlRail}>
+        <View style={[s.tlDot, { backgroundColor: (color || colors.line) + '22', borderColor: color || colors.line }]}>
+          <Text style={{ fontSize: 15 }}>{emoji}</Text>
+        </View>
+        <View style={s.tlLine} />
+      </View>
+      <View style={s.tlContent}>
+        <Text style={s.tlTitle}>{title}</Text>
+        {sub ? <Text style={type.meta}>{sub}</Text> : null}
+      </View>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  row: { flexDirection: 'row', marginBottom: 6 },
-  question: { fontSize: 17, lineHeight: 24, color: colors.ink },
-  verdict: { fontSize: 14, fontWeight: '700', marginBottom: 6 },
-  feedback: { fontSize: 15, lineHeight: 21, color: colors.ink },
+  statsRow: { flexDirection: 'row', marginBottom: 10, alignItems: 'stretch' },
+  streakBox: {
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16,
+    backgroundColor: colors.orange + '14', borderRadius: 18, marginRight: 10,
+    paddingVertical: 8,
+  },
+  streakEmoji: { fontSize: 20 },
+  streakNum: { fontSize: 22, fontWeight: '800', color: colors.orangeDark },
+  streakLabel: { fontSize: 11, color: colors.inkSoft },
+  goalBox: { flex: 1, justifyContent: 'center' },
+  goalText: { fontSize: 14, fontWeight: '700', color: colors.ink, marginBottom: 6 },
+  heroTitle: { fontSize: 20, fontWeight: '800', color: colors.ink, marginBottom: 6, marginTop: 2 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap' },
+  quickRow: { flexDirection: 'row', gap: 10, marginTop: 2 },
+  quickBtn: {
+    flex: 1, alignItems: 'center', paddingVertical: 10,
+    borderWidth: 2, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.card,
+  },
+  quickText: { fontWeight: '700', color: colors.ink },
+  tlRow: { flexDirection: 'row', marginBottom: 2 },
+  tlRail: { alignItems: 'center', width: 44 },
+  tlDot: {
+    width: 36, height: 36, borderRadius: 18, borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  tlLine: { flex: 1, width: 2, backgroundColor: colors.line, marginVertical: 2 },
+  tlContent: { flex: 1, paddingLeft: 10, paddingBottom: 18, paddingTop: 4 },
+  tlTitle: { fontSize: 15, fontWeight: '700', color: colors.ink },
 });

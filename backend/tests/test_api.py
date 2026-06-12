@@ -137,6 +137,14 @@ def test_everything():
             if scheduled:  # if anything survives cooldown it must not be the just-seen skill
                 assert scheduled[1].last_seen_at is None
 
+        # /today aggregate: streak, goal, schedule visibility
+        t = c.get("/today?user_id=1", headers=H).json()
+        assert t["streak_days"] >= 1 and t["answered_today"] >= 2
+        assert t["daily_goal"] == 3 and t["has_active_enrollment"]
+        assert t["recent"] and t["recent"][0]["verdict"] == "correct"
+        assert c.patch("/users/1", json={"daily_goal": 5},
+                       headers=H).json()["daily_goal"] == 5
+
         # cleanup paths: skip, cascade deletes
         assert c.post("/practice/skip?user_id=1", headers=H).json()["ok"]
         assert c.delete(f"/programs/{p['id']}?user_id=1", headers=H).json()["ok"]

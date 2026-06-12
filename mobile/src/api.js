@@ -103,7 +103,14 @@ export const api = {
   answer: (uid, text) => call('POST', '/practice/answer', { user_id: uid, text }),
   skip: (uid) => call('POST', `/practice/skip?user_id=${uid}`),
 
-  // progress
+  // question bank
+  listQuestions: (skillId) => call('GET', `/skills/${skillId}/questions`),
+  createQuestion: (uid, q) => call('POST', `/questions?user_id=${uid}`, q),
+  updateQuestion: (id, uid, patch) => call('PATCH', `/questions/${id}?user_id=${uid}`, patch),
+  deleteQuestion: (id, uid) => call('DELETE', `/questions/${id}?user_id=${uid}`),
+
+  // progress & home
+  today: (uid) => call('GET', `/today?user_id=${uid}`),
   progress: (uid) => call('GET', `/progress?user_id=${uid}`),
   attempts: (uid, limit = 30) => call('GET', `/attempts?user_id=${uid}&limit=${limit}`),
   notifications: (uid) => call('GET', `/notifications?user_id=${uid}`),

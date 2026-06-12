@@ -1,20 +1,18 @@
-// Connection (URL + API key + user), tutor preferences (quiet hours, caps,
-// timezone), push registration, and the demo seed.
+// Settings, grouped and in human words: connection, notifications,
+// learning preferences, demo data.
 import React, { useCallback, useState } from 'react';
-import { Text, ScrollView, StyleSheet } from 'react-native';
+import { Text, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, getConfig, saveConfig } from '../api';
 import { registerForPush } from '../push';
-import { Btn, Card, Field, ErrorText } from '../components';
-import { colors, pad } from '../theme';
+import { Btn, Card, Field, ErrorText, SectionTitle } from '../components';
+import { colors, pad, type } from '../theme';
 
 export default function SettingsScreen() {
-  // connection
   const [url, setUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [userId, setUserId] = useState('1');
   const [connMsg, setConnMsg] = useState('');
-  // tutor prefs (loaded from the backend once connected)
   const [prefs, setPrefs] = useState(null);
   const [prefsMsg, setPrefsMsg] = useState('');
   const [err, setErr] = useState('');
@@ -29,8 +27,9 @@ export default function SettingsScreen() {
         quiet_hours_start: String(u.quiet_hours_start),
         quiet_hours_end: String(u.quiet_hours_end),
         max_prompts_per_day: String(u.max_prompts_per_day),
+        daily_goal: String(u.daily_goal ?? 3),
       });
-    } catch { setPrefs(null); } // not connected yet - fine
+    } catch { setPrefs(null); }
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -46,30 +45,15 @@ export default function SettingsScreen() {
     await saveConfig({ url, apiKey, userId: parseInt(userId || '1', 10) });
     try {
       const h = await api.health();
-      let msg = 'Saved - backend reachable ✓';
-      if (h.auth && !apiKey.trim()) msg += '\n⚠ Backend requires an API key - set it above.';
-      // verify the key + user actually work
-      try { await api.getUser(parseInt(userId || '1', 10)); }
-      catch (e) { msg += `\n⚠ ${e.message}`; }
+      let msg = '✅ Connected';
+      if (h.auth && !apiKey.trim()) msg = '⚠️ This backend needs an API key - set it above.';
+      else {
+        try { await api.getUser(parseInt(userId || '1', 10)); }
+        catch (e) { msg = `⚠️ Connected, but: ${e.message}`; }
+      }
       setConnMsg(msg);
       loadPrefs();
-    } catch (e) {
-      setConnMsg(`Saved, but: ${e.message}`);
-    }
-  };
-
-  const seed = async () => {
-    setErr('');
-    try {
-      const r = await api.seed();
-      setConnMsg(`Seed: ${JSON.stringify(r)}`);
-      loadPrefs();
-    } catch (e) { setErr(e.message); }
-  };
-
-  const push = async () => {
-    const r = await registerForPush();
-    setConnMsg(r.msg);
+    } catch (e) { setConnMsg(`❌ ${e.message}`); }
   };
 
   const savePrefs = async () => {
@@ -82,8 +66,9 @@ export default function SettingsScreen() {
         quiet_hours_start: parseInt(prefs.quiet_hours_start, 10),
         quiet_hours_end: parseInt(prefs.quiet_hours_end, 10),
         max_prompts_per_day: parseInt(prefs.max_prompts_per_day, 10),
+        daily_goal: parseInt(prefs.daily_goal, 10),
       });
-      setPrefsMsg('Preferences saved ✓');
+      setPrefsMsg('✅ Saved');
     } catch (e) { setErr(e.message); }
   };
 
@@ -93,49 +78,69 @@ export default function SettingsScreen() {
     <ScrollView style={s.root} contentContainerStyle={{ padding: pad, paddingBottom: 48 }}>
       <ErrorText>{err}</ErrorText>
 
-      <Text style={s.section}>Connection</Text>
-      <Field label="Backend URL" value={url} onChangeText={setUrl}
-        placeholder="http://YOUR_SERVER:8000" autoCapitalize="none" />
-      <Field label="API key (X-API-Key from backend/.env)" value={apiKey} onChangeText={setApiKey}
-        placeholder="leave empty if the backend has no key" autoCapitalize="none" />
-      <Field label="User ID" value={userId} onChangeText={setUserId} keyboardType="numeric" />
-      <Btn label="Save & test connection" onPress={saveConnection} />
-      {connMsg ? <Card><Text style={s.msg}>{connMsg}</Text></Card> : null}
+      <SectionTitle>Connection</SectionTitle>
+      <Card>
+        <Field label="Backend URL" value={url} onChangeText={setUrl}
+          placeholder="https://your-server:8000" autoCapitalize="none" />
+        <Field label="API key" value={apiKey} onChangeText={setApiKey}
+          placeholder="from backend/.env" autoCapitalize="none" />
+        <Field label="User ID" value={userId} onChangeText={setUserId} keyboardType="numeric" />
+        <Btn label="Save & test" onPress={saveConnection} />
+        {connMsg ? <Text style={s.msg}>{connMsg}</Text> : null}
+      </Card>
 
-      <Text style={s.section}>Notifications</Text>
-      <Btn label="Enable push notifications on this phone" onPress={push} kind="secondary" />
+      <SectionTitle>Notifications</SectionTitle>
+      <Card>
+        <Text style={[type.meta, { marginBottom: 8 }]}>
+          Nudges arrive as push notifications once enabled on this phone.
+        </Text>
+        <Btn label="🔔 Enable push notifications" kind="outline"
+          onPress={async () => setConnMsg((await registerForPush()).msg)} />
+      </Card>
 
       {prefs && (
         <>
-          <Text style={s.section}>Tutor preferences</Text>
-          <Field label="Your name" value={prefs.name} onChangeText={setPref('name')} />
-          <Field label="Timezone (IANA, e.g. Europe/London)" value={prefs.timezone}
-            onChangeText={setPref('timezone')} autoCapitalize="none" />
-          <Field label="Quiet hours start (0-23, local time - no nudges after this)"
-            value={prefs.quiet_hours_start} onChangeText={setPref('quiet_hours_start')}
-            keyboardType="numeric" />
-          <Field label="Quiet hours end (0-23)"
-            value={prefs.quiet_hours_end} onChangeText={setPref('quiet_hours_end')}
-            keyboardType="numeric" />
-          <Field label="Max nudges per day"
-            value={prefs.max_prompts_per_day} onChangeText={setPref('max_prompts_per_day')}
-            keyboardType="numeric" />
-          <Btn label="Save preferences" onPress={savePrefs} />
-          {prefsMsg ? <Card><Text style={s.msg}>{prefsMsg}</Text></Card> : null}
+          <SectionTitle>My tutor</SectionTitle>
+          <Card>
+            <Field label="Daily goal (questions per day)" value={prefs.daily_goal}
+              onChangeText={setPref('daily_goal')} keyboardType="numeric"
+              hint="Powers the streak and the progress bar on Today." />
+            <Field label="Max nudges per day" value={prefs.max_prompts_per_day}
+              onChangeText={setPref('max_prompts_per_day')} keyboardType="numeric"
+              hint="The tutor never pings you more than this." />
+            <View style={s.row}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Field label="Quiet from (0-23)" value={prefs.quiet_hours_start}
+                  onChangeText={setPref('quiet_hours_start')} keyboardType="numeric" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Field label="until (0-23)" value={prefs.quiet_hours_end}
+                  onChangeText={setPref('quiet_hours_end')} keyboardType="numeric" />
+              </View>
+            </View>
+            <Field label="Timezone" value={prefs.timezone} onChangeText={setPref('timezone')}
+              autoCapitalize="none" hint="e.g. Europe/London - quiet hours use this." />
+            <Field label="Your name" value={prefs.name} onChangeText={setPref('name')} />
+            <Btn label="Save preferences" onPress={savePrefs} />
+            {prefsMsg ? <Text style={s.msg}>{prefsMsg}</Text> : null}
+          </Card>
         </>
       )}
 
-      <Text style={s.section}>Demo</Text>
-      <Btn label="Seed demo data (A-level Maths)" onPress={seed} kind="secondary" />
+      <SectionTitle>Demo</SectionTitle>
+      <Card>
+        <Btn label="Seed demo course (A-level Maths)" kind="outline"
+          onPress={async () => {
+            try { setConnMsg(`Seed: ${JSON.stringify(await api.seed())}`); }
+            catch (e) { setErr(e.message); }
+          }} />
+      </Card>
     </ScrollView>
   );
 }
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  section: {
-    fontSize: 14, fontWeight: '700', color: colors.inkSoft,
-    marginTop: 20, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5,
-  },
-  msg: { color: colors.ink, lineHeight: 20 },
+  msg: { marginTop: 8, color: colors.ink, lineHeight: 20 },
+  row: { flexDirection: 'row' },
 });

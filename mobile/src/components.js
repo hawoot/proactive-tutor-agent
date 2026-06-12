@@ -1,63 +1,106 @@
-// Small shared UI vocabulary used by every screen.
+// The shared UI kit: chunky playful buttons, soft cards, chips, bars,
+// bottom sheets. Every screen builds from these so the app feels coherent.
 import React from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ActivityIndicator, Modal,
   ScrollView, StyleSheet, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { colors, radius, pad } from './theme';
+import { colors, radius, pad, type } from './theme';
 
-export function Btn({ label, onPress, busy, kind = 'primary', small }) {
-  const style = [
-    s.btn,
-    kind === 'secondary' && s.btnSecondary,
-    kind === 'danger' && s.btnDanger,
-    small && s.btnSmall,
-  ];
-  const textStyle = [
-    s.btnText,
-    kind === 'secondary' && s.btnTextSecondary,
-    small && s.btnTextSmall,
-  ];
+const BTN_COLORS = {
+  primary: [colors.primary, colors.primaryDark],
+  blue: [colors.blue, colors.blueDark],
+  purple: [colors.purple, colors.purpleDark],
+  danger: [colors.red, colors.redDark],
+  orange: [colors.orange, colors.orangeDark],
+};
+
+export function Btn({ label, onPress, busy, color = 'primary', kind = 'solid', small }) {
+  const [bg, edge] = BTN_COLORS[color] || BTN_COLORS.primary;
+  if (kind === 'ghost') {
+    return (
+      <TouchableOpacity onPress={onPress} disabled={busy} style={s.ghostBtn}>
+        <Text style={[s.ghostText, small && { fontSize: 14 }]}>{label}</Text>
+      </TouchableOpacity>
+    );
+  }
+  const outline = kind === 'outline';
   return (
-    <TouchableOpacity style={style} onPress={onPress} disabled={busy}>
-      {busy ? <ActivityIndicator color={kind === 'secondary' ? colors.ink : '#fff'} />
-            : <Text style={textStyle}>{label}</Text>}
+    <TouchableOpacity
+      onPress={onPress} disabled={busy} activeOpacity={0.8}
+      style={[
+        s.btn, small && s.btnSmall,
+        outline
+          ? { backgroundColor: colors.card, borderWidth: 2, borderColor: colors.line, borderBottomWidth: 4 }
+          : { backgroundColor: bg, borderBottomWidth: 4, borderBottomColor: edge },
+      ]}
+    >
+      {busy ? <ActivityIndicator color={outline ? colors.ink : '#fff'} /> : (
+        <Text style={[s.btnText, small && { fontSize: 14 }, outline && { color: colors.ink }]}>
+          {label}
+        </Text>
+      )}
     </TouchableOpacity>
   );
 }
 
-export function Card({ children, style }) {
-  return <View style={[s.card, style]}>{children}</View>;
+export function Card({ children, style, tint }) {
+  return (
+    <View style={[s.card, tint && { borderColor: tint, borderWidth: 2 }, style]}>
+      {children}
+    </View>
+  );
 }
 
-export function Field({ label, value, onChangeText, placeholder, multiline, keyboardType, autoCapitalize }) {
+export function Chip({ text, color }) {
+  const c = color || colors.inkSoft;
   return (
-    <View style={{ marginBottom: 10 }}>
-      {label ? <Text style={s.label}>{label}</Text> : null}
+    <View style={[s.chip, { backgroundColor: c + '1A' }]}>
+      <Text style={[s.chipText, { color: c }]}>{text}</Text>
+    </View>
+  );
+}
+
+export function Bar({ value, color, height = 12 }) {
+  const pct = Math.max(0, Math.min(100, Math.round((value || 0) * 100)));
+  const fill = color || (pct >= 70 ? colors.good : pct >= 40 ? colors.warn : colors.bad);
+  return (
+    <View style={[s.barBg, { height, borderRadius: height / 2 }]}>
+      <View style={[s.bar, { width: `${pct}%`, backgroundColor: fill, borderRadius: height / 2 }]} />
+    </View>
+  );
+}
+
+export function Field({ label, value, onChangeText, placeholder, multiline, keyboardType, autoCapitalize, hint }) {
+  return (
+    <View style={{ marginBottom: 12 }}>
+      {label ? <Text style={s.fieldLabel}>{label}</Text> : null}
       <TextInput
-        style={[s.input, multiline && { minHeight: 80, textAlignVertical: 'top' }]}
+        style={[s.input, multiline && { minHeight: 90, textAlignVertical: 'top' }]}
         value={value} onChangeText={onChangeText} placeholder={placeholder}
-        placeholderTextColor="#aaa" multiline={!!multiline}
+        placeholderTextColor={colors.inkFaint} multiline={!!multiline}
         keyboardType={keyboardType} autoCapitalize={autoCapitalize ?? 'sentences'}
       />
+      {hint ? <Text style={s.fieldHint}>{hint}</Text> : null}
     </View>
   );
 }
 
-export function Tag({ text, color }) {
+export function SectionTitle({ children, right }) {
   return (
-    <View style={[s.tag, { backgroundColor: (color || colors.inkSoft) + '22' }]}>
-      <Text style={[s.tagText, { color: color || colors.inkSoft }]}>{text}</Text>
+    <View style={s.sectionRow}>
+      <Text style={type.label}>{children}</Text>
+      {right || null}
     </View>
   );
 }
 
-export function Bar({ value }) {
-  const pct = Math.max(0, Math.min(100, Math.round(value * 100)));
-  const barColor = pct >= 70 ? colors.good : pct >= 40 ? colors.warn : colors.bad;
+export function EmptyState({ emoji, title, hint }) {
   return (
-    <View style={s.barBg}>
-      <View style={[s.bar, { width: `${pct}%`, backgroundColor: barColor }]} />
+    <View style={s.empty}>
+      <Text style={{ fontSize: 44 }}>{emoji}</Text>
+      <Text style={[type.title, { marginTop: 8, textAlign: 'center' }]}>{title}</Text>
+      {hint ? <Text style={[type.meta, { marginTop: 4, textAlign: 'center' }]}>{hint}</Text> : null}
     </View>
   );
 }
@@ -66,29 +109,30 @@ export function ErrorText({ children }) {
   return children ? <Text style={s.err}>{String(children)}</Text> : null;
 }
 
-export function EmptyText({ children }) {
-  return <Text style={s.empty}>{children}</Text>;
-}
-
 export function Choice({ options, value, onChange }) {
-  // A compact segmented control: options = [{value, label}]
+  // options: [{value, label, hint?}] - stacked selectable rows with hints.
   return (
-    <View style={s.choiceRow}>
-      {options.map((o) => (
-        <TouchableOpacity
-          key={o.value}
-          style={[s.choice, value === o.value && s.choiceOn]}
-          onPress={() => onChange(o.value)}
-        >
-          <Text style={value === o.value ? s.choiceTextOn : s.choiceText}>{o.label}</Text>
-        </TouchableOpacity>
-      ))}
+    <View style={{ marginBottom: 6 }}>
+      {options.map((o) => {
+        const on = value === o.value;
+        return (
+          <TouchableOpacity
+            key={o.value} onPress={() => onChange(o.value)} activeOpacity={0.8}
+            style={[s.choice, on && s.choiceOn]}
+          >
+            <View style={[s.radio, on && s.radioOn]}>{on ? <View style={s.radioDot} /> : null}</View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.choiceLabel, on && { color: colors.blueDark }]}>{o.label}</Text>
+              {o.hint ? <Text style={s.choiceHint}>{o.hint}</Text> : null}
+            </View>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
 
 export function Sheet({ visible, title, onClose, children }) {
-  // Bottom-sheet style modal used by all editors.
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
@@ -96,11 +140,17 @@ export function Sheet({ visible, title, onClose, children }) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={s.sheet}>
+          <View style={s.sheetHandle} />
           <View style={s.sheetHeader}>
-            <Text style={s.sheetTitle}>{title}</Text>
-            <TouchableOpacity onPress={onClose}><Text style={s.sheetClose}>✕</Text></TouchableOpacity>
+            <Text style={type.title}>{title}</Text>
+            <TouchableOpacity onPress={onClose} style={s.sheetClose}>
+              <Text style={{ fontSize: 16, color: colors.inkSoft }}>✕</Text>
+            </TouchableOpacity>
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled">{children}</ScrollView>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            {children}
+            <View style={{ height: 24 }} />
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -109,47 +159,65 @@ export function Sheet({ visible, title, onClose, children }) {
 
 const s = StyleSheet.create({
   btn: {
-    backgroundColor: colors.accent, borderRadius: radius, padding: 14,
+    borderRadius: radius.lg, paddingVertical: 14, paddingHorizontal: 18,
     alignItems: 'center', marginVertical: 6,
   },
-  btnSecondary: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
-  btnDanger: { backgroundColor: colors.bad },
-  btnSmall: { padding: 8, marginVertical: 3 },
-  btnText: { color: colors.accentText, fontWeight: '600', fontSize: 16 },
-  btnTextSecondary: { color: colors.ink },
-  btnTextSmall: { fontSize: 13 },
-  card: { backgroundColor: colors.card, borderRadius: radius, padding: 14, marginVertical: 6 },
-  label: { fontSize: 13, fontWeight: '600', color: colors.inkSoft, marginBottom: 4 },
+  btnSmall: { paddingVertical: 9, paddingHorizontal: 14, marginVertical: 4 },
+  btnText: { color: '#fff', fontWeight: '800', fontSize: 16, letterSpacing: 0.4 },
+  ghostBtn: { alignItems: 'center', paddingVertical: 10 },
+  ghostText: { color: colors.blue, fontWeight: '700', fontSize: 15 },
+  card: {
+    backgroundColor: colors.card, borderRadius: radius.lg, padding: pad,
+    borderWidth: 2, borderColor: colors.line, marginVertical: 6,
+  },
+  chip: {
+    borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3,
+    marginRight: 6, marginBottom: 4, alignSelf: 'flex-start',
+  },
+  chipText: { fontSize: 12, fontWeight: '700' },
+  barBg: { backgroundColor: colors.line, overflow: 'hidden', flex: 1 },
+  bar: { height: '100%' },
+  fieldLabel: { ...type.label, marginBottom: 6 },
+  fieldHint: { fontSize: 12, color: colors.inkFaint, marginTop: 4 },
   input: {
-    backgroundColor: colors.card, borderRadius: radius, padding: 12, fontSize: 16,
-    borderWidth: 1, borderColor: colors.line, color: colors.ink,
+    backgroundColor: colors.card, borderRadius: radius.md, padding: 13,
+    fontSize: 16, borderWidth: 2, borderColor: colors.line, color: colors.ink,
   },
-  tag: {
-    borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2,
-    marginRight: 6, alignSelf: 'flex-start',
+  sectionRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginTop: 20, marginBottom: 8,
   },
-  tagText: { fontSize: 12, fontWeight: '600' },
-  barBg: { height: 8, backgroundColor: colors.line, borderRadius: 4, marginVertical: 4 },
-  bar: { height: 8, borderRadius: 4 },
-  err: { color: colors.bad, marginVertical: 8 },
-  empty: { color: colors.inkSoft, marginVertical: 12, textAlign: 'center' },
-  choiceRow: { flexDirection: 'row', marginBottom: 10 },
+  empty: { alignItems: 'center', paddingVertical: 36, paddingHorizontal: 24 },
+  err: {
+    color: colors.bad, backgroundColor: colors.bad + '14', padding: 10,
+    borderRadius: radius.sm, marginVertical: 8, overflow: 'hidden',
+  },
   choice: {
-    flex: 1, padding: 10, alignItems: 'center', borderWidth: 1,
-    borderColor: colors.line, backgroundColor: colors.card,
+    flexDirection: 'row', alignItems: 'center', padding: 12, marginBottom: 8,
+    borderWidth: 2, borderColor: colors.line, borderRadius: radius.md,
+    backgroundColor: colors.card,
   },
-  choiceOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  choiceText: { color: colors.ink },
-  choiceTextOn: { color: colors.accentText, fontWeight: '600' },
-  sheetWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0006' },
+  choiceOn: { borderColor: colors.blue, backgroundColor: colors.blue + '0D' },
+  radio: {
+    width: 22, height: 22, borderRadius: 11, borderWidth: 2,
+    borderColor: colors.line, marginRight: 10, alignItems: 'center', justifyContent: 'center',
+  },
+  radioOn: { borderColor: colors.blue },
+  radioDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: colors.blue },
+  choiceLabel: { fontSize: 15, fontWeight: '700', color: colors.ink },
+  choiceHint: { fontSize: 12.5, color: colors.inkSoft, marginTop: 2 },
+  sheetWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0007' },
   sheet: {
-    backgroundColor: colors.bg, borderTopLeftRadius: 16, borderTopRightRadius: 16,
-    padding: pad, maxHeight: '88%',
+    backgroundColor: colors.bgSoft, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: pad, maxHeight: '90%',
+  },
+  sheetHandle: {
+    width: 44, height: 5, borderRadius: 3, backgroundColor: colors.line,
+    alignSelf: 'center', marginBottom: 10,
   },
   sheetHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  sheetTitle: { fontSize: 18, fontWeight: '700', color: colors.ink },
-  sheetClose: { fontSize: 18, color: colors.inkSoft, padding: 4 },
+  sheetClose: { padding: 6 },
 });

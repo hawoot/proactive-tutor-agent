@@ -1,16 +1,19 @@
-// Proactive Tutor - mobile v2.
-// Four tabs: Today (practice) / Library (content management) / Progress / Settings.
-import React from 'react';
-import { Text, ScrollView } from 'react-native';
+// Proactive Tutor - mobile v3 (the bright & playful redesign).
+// Onboarding on first launch, then four tabs; Practice is a full-screen flow.
+import React, { useEffect, useState } from 'react';
+import { Text, View, ActivityIndicator, ScrollView } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { getConfig } from './src/api';
 import { colors } from './src/theme';
 import TodayScreen from './src/screens/TodayScreen';
-import LibraryScreen from './src/screens/LibraryScreen';
-import ProgramScreen from './src/screens/ProgramScreen';
+import PracticeScreen from './src/screens/PracticeScreen';
+import CoursesScreen from './src/screens/CoursesScreen';
+import CourseScreen from './src/screens/CourseScreen';
 import ProgressScreen from './src/screens/ProgressScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import OnboardingScreen from './src/screens/OnboardingScreen';
 
 // Release builds have no red error box - without this, a render crash is an
 // unreadable blank screen. This shows the actual error so it can be reported.
@@ -22,7 +25,7 @@ class ErrorBoundary extends React.Component {
       return (
         <ScrollView style={{ flex: 1, backgroundColor: '#fff' }} contentContainerStyle={{ padding: 24, paddingTop: 64 }}>
           <Text style={{ fontSize: 18, fontWeight: '700', color: '#b00020' }}>
-            The app hit an error
+            The app hit an error - screenshot this
           </Text>
           <Text selectable style={{ marginTop: 12, color: '#333' }}>
             {String(this.state.error?.message || this.state.error)}
@@ -38,47 +41,82 @@ class ErrorBoundary extends React.Component {
 }
 
 const Tab = createBottomTabNavigator();
-const LibraryStack = createNativeStackNavigator();
+const RootStack = createNativeStackNavigator();
+const CoursesStack = createNativeStackNavigator();
 
-function LibraryNavigator() {
+const headerStyle = {
+  headerStyle: { backgroundColor: colors.bg },
+  headerShadowVisible: false,
+  headerTitleStyle: { fontWeight: '800', color: colors.ink },
+};
+
+function CoursesNavigator() {
   return (
-    <LibraryStack.Navigator
-      screenOptions={{ headerStyle: { backgroundColor: colors.bg }, headerShadowVisible: false }}
-    >
-      <LibraryStack.Screen name="LibraryHome" component={LibraryScreen} options={{ title: 'Library' }} />
-      <LibraryStack.Screen
-        name="Program" component={ProgramScreen}
-        options={({ route }) => ({ title: route.params?.title || 'Program' })}
-      />
-    </LibraryStack.Navigator>
+    <CoursesStack.Navigator screenOptions={headerStyle}>
+      <CoursesStack.Screen name="CoursesHome" component={CoursesScreen} options={{ title: 'Courses' }} />
+      <CoursesStack.Screen name="Course" component={CourseScreen}
+        options={({ route }) => ({ title: route.params?.title || 'Course' })} />
+    </CoursesStack.Navigator>
   );
 }
 
-const ICONS = { Today: '✏️', Library: '📚', Progress: '📈', Settings: '⚙️' };
+const TAB_ICONS = { Today: '🏠', Courses: '📚', Progress: '📈', Settings: '⚙️' };
 
-const theme = {
+function MainTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        ...headerStyle,
+        tabBarActiveTintColor: colors.primaryDark,
+        tabBarInactiveTintColor: colors.inkFaint,
+        tabBarLabelStyle: { fontWeight: '700', fontSize: 11 },
+        tabBarStyle: { backgroundColor: colors.bg, borderTopColor: colors.line, height: 60, paddingBottom: 6 },
+        tabBarIcon: ({ focused }) => (
+          <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.45 }}>{TAB_ICONS[route.name]}</Text>
+        ),
+      })}
+    >
+      <Tab.Screen name="Today" component={TodayScreen} />
+      <Tab.Screen name="Courses" component={CoursesNavigator} options={{ headerShown: false }} />
+      <Tab.Screen name="Progress" component={ProgressScreen} />
+      <Tab.Screen name="Settings" component={SettingsScreen} />
+    </Tab.Navigator>
+  );
+}
+
+const navTheme = {
   ...DefaultTheme,
   colors: { ...DefaultTheme.colors, background: colors.bg, card: colors.bg, text: colors.ink },
 };
 
 export default function App() {
+  const [initialRoute, setInitialRoute] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      const { url } = await getConfig();
+      setInitialRoute(url ? 'Main' : 'Onboarding');
+    })();
+  }, []);
+
+  if (!initialRoute) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
+        <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
+
   return (
-    <NavigationContainer theme={theme}>
-      <Tab.Navigator
-        screenOptions={({ route }) => ({
-          headerStyle: { backgroundColor: colors.bg },
-          headerShadowVisible: false,
-          tabBarActiveTintColor: colors.ink,
-          tabBarInactiveTintColor: '#999',
-          tabBarStyle: { backgroundColor: colors.bg, borderTopColor: colors.line },
-          tabBarIcon: () => <Text style={{ fontSize: 18 }}>{ICONS[route.name]}</Text>,
-        })}
-      >
-        <Tab.Screen name="Today" component={TodayScreen} />
-        <Tab.Screen name="Library" component={LibraryNavigator} options={{ headerShown: false }} />
-        <Tab.Screen name="Progress" component={ProgressScreen} />
-        <Tab.Screen name="Settings" component={SettingsScreen} />
-      </Tab.Navigator>
-    </NavigationContainer>
+    <ErrorBoundary>
+      <NavigationContainer theme={navTheme}>
+        <RootStack.Navigator initialRouteName={initialRoute} screenOptions={headerStyle}>
+          <RootStack.Screen name="Onboarding" component={OnboardingScreen} options={{ headerShown: false }} />
+          <RootStack.Screen name="Main" component={MainTabs} options={{ headerShown: false }} />
+          <RootStack.Screen name="Practice" component={PracticeScreen}
+            options={{ title: 'Practice', presentation: 'modal' }} />
+        </RootStack.Navigator>
+      </NavigationContainer>
+    </ErrorBoundary>
   );
 }
