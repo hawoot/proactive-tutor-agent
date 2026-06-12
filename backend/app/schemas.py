@@ -138,6 +138,7 @@ class SkillOut(ORM):
     description: str
     question_type: str
     effort: str
+    question_count: int = 0  # curated questions in the bank for this skill
 
 
 class UnitNode(ORM):

@@ -123,6 +123,15 @@ def clone_program(program_id: int, user_id: int, db: Session = Depends(get_db)):
 
 # --- the tree (what the Library screen renders) ---------------------------------
 
+def _question_counts(db: Session, program_id: int) -> dict[int, int]:
+    return dict(db.execute(
+        select(Question.skill_id, func.count(Question.id))
+        .join(Skill, Skill.id == Question.skill_id)
+        .where(Skill.program_id == program_id)
+        .group_by(Question.skill_id)
+    ).all())
+
+
 @router.get("/programs/{program_id}/tree", response_model=list[UnitNode])
 def program_tree(program_id: int, db: Session = Depends(get_db)):
     get_program_or_404(db, program_id)
@@ -134,6 +143,7 @@ def program_tree(program_id: int, db: Session = Depends(get_db)):
         select(Skill).where(Skill.program_id == program_id)
         .order_by(Skill.position, Skill.id)
     ).scalars().all()
+    qcounts = _question_counts(db, program_id)
 
     # Build nodes explicitly: model_validate(u) would also pull the ORM
     # skills relationship, duplicating every skill we append below.
@@ -143,7 +153,9 @@ def program_tree(program_id: int, db: Session = Depends(get_db)):
     ) for u in units}
     for s in skills:
         if s.unit_id in nodes:
-            nodes[s.unit_id].skills.append(SkillOut.model_validate(s))
+            out = SkillOut.model_validate(s)
+            out.question_count = qcounts.get(s.id, 0)
+            nodes[s.unit_id].skills.append(out)
     roots: list[UnitNode] = []
     for u in units:
         node = nodes[u.id]
@@ -158,10 +170,17 @@ def program_tree(program_id: int, db: Session = Depends(get_db)):
 def program_skills(program_id: int, db: Session = Depends(get_db)):
     """Flat skill list, including skills not attached to any unit."""
     get_program_or_404(db, program_id)
-    return db.execute(
+    qcounts = _question_counts(db, program_id)
+    rows = db.execute(
         select(Skill).where(Skill.program_id == program_id)
         .order_by(Skill.position, Skill.id)
     ).scalars().all()
+    out = []
+    for s in rows:
+        item = SkillOut.model_validate(s)
+        item.question_count = qcounts.get(s.id, 0)
+        out.append(item)
+    return out
 
 
 # --- units ------------------------------------------------------------------------
