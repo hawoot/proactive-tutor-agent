@@ -5,6 +5,8 @@ from .base import LLMProvider
 
 class FakeProvider(LLMProvider):
     def ask(self, prompt: str, max_tokens: int = 500) -> str:
+        if "FOLLOW-UP" in prompt:  # post-verdict drill-down
+            return "(fake provider) Good follow-up - here is a fuller explanation."
         if "MODE: COACH" in prompt:  # conversation turn
             last = prompt.rsplit("STUDENT:", 1)[-1].split("\n", 1)[0]
             if "answer" in last.lower() or "= " in last:

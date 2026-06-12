@@ -17,6 +17,14 @@ const QUICK_REPLIES = [
   { label: '📖 Show me', text: 'Please show me the full solution and walk me through it.' },
 ];
 
+// After marking, the conversation stays open - getting it right isn't the
+// same as being sure, and feedback can be unclear.
+const FOLLOWUP_REPLIES = [
+  { label: '🔍 Explain more', text: 'Can you explain that in more depth, step by step?' },
+  { label: '🤷 Still unsure', text: "I got the verdict, but I'm still not fully sure why. Can you clarify?" },
+  { label: '🧪 Similar example', text: 'Can you show me a similar example worked through?' },
+];
+
 export default function PracticeScreen({ route, navigation }) {
   const effort = route.params?.effort || null;
   const [phase, setPhase] = useState('loading'); // loading | chat | error
@@ -100,6 +108,10 @@ export default function PracticeScreen({ route, navigation }) {
   }
 
   const verdict = closed ? (VERDICTS[attempt?.verdict] || VERDICTS.skipped) : null;
+  // render the banner right after the feedback message; follow-up chat flows below it
+  const fbIdx = messages.findIndex((m) => m.kind === 'feedback');
+  const preMessages = fbIdx >= 0 ? messages.slice(0, fbIdx + 1) : messages;
+  const postMessages = fbIdx >= 0 ? messages.slice(fbIdx + 1) : [];
 
   return (
     <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -115,65 +127,72 @@ export default function PracticeScreen({ route, navigation }) {
         contentContainerStyle={{ padding: pad, paddingTop: 6 }}
         keyboardShouldPersistTaps="handled">
         <ErrorText>{err}</ErrorText>
-        {messages.map((m) => <Bubble key={m.id} m={m} />)}
+        {preMessages.map((m) => <Bubble key={m.id} m={m} />)}
+
+        {closed && verdict ? (
+          <View style={[s.verdictBanner, { backgroundColor: verdict.color + '1A', borderColor: verdict.color }]}>
+            <Text style={{ fontSize: 40 }}>{verdict.emoji}</Text>
+            <Text style={[s.verdictText, { color: verdict.color }]}>{verdict.label}</Text>
+            {goal ? (
+              <Text style={s.goalNote}>
+                {goal.done >= goal.target
+                  ? `🎯 Daily goal complete · 🔥 ${goal.streak}-day streak`
+                  : `${goal.done} of ${goal.target} today · 🔥 ${goal.streak}-day streak`}
+              </Text>
+            ) : null}
+            <Text style={s.followupHint}>Still unsure about anything? Keep asking below 👇</Text>
+          </View>
+        ) : null}
+
+        {postMessages.map((m) => <Bubble key={m.id} m={m} />)}
         {thinking ? (
           <View style={[s.bubble, s.tutorBubble]}>
             <Text style={s.thinking}>tutor is thinking…</Text>
           </View>
         ) : null}
 
-        {closed && verdict ? (
+        {closed ? (
           <>
-            <View style={[s.verdictBanner, { backgroundColor: verdict.color + '1A', borderColor: verdict.color }]}>
-              <Text style={{ fontSize: 40 }}>{verdict.emoji}</Text>
-              <Text style={[s.verdictText, { color: verdict.color }]}>{verdict.label}</Text>
-              {goal ? (
-                <Text style={s.goalNote}>
-                  {goal.done >= goal.target
-                    ? `🎯 Daily goal complete · 🔥 ${goal.streak}-day streak`
-                    : `${goal.done} of ${goal.target} today · 🔥 ${goal.streak}-day streak`}
-                </Text>
-              ) : null}
-            </View>
             <Btn label="Another question" onPress={start} />
             <Btn label="Done for now" kind="outline" onPress={() => navigation.goBack()} />
           </>
         ) : null}
       </ScrollView>
 
-      {!closed && (
-        <View style={s.composer}>
-          <View style={s.quickRow}>
-            {QUICK_REPLIES.map((q) => (
-              <TouchableOpacity key={q.label} style={s.quickChip} onPress={() => send(q.text)}>
-                <Text style={s.quickText}>{q.label}</Text>
-              </TouchableOpacity>
-            ))}
+      <View style={s.composer}>
+        <View style={s.quickRow}>
+          {(closed ? FOLLOWUP_REPLIES : QUICK_REPLIES).map((q) => (
+            <TouchableOpacity key={q.label} style={s.quickChip} onPress={() => send(q.text)}>
+              <Text style={s.quickText}>{q.label}</Text>
+            </TouchableOpacity>
+          ))}
+          {!closed && (
             <TouchableOpacity style={s.quickChip} onPress={skip}>
               <Text style={s.quickText}>⏭️ Skip</Text>
             </TouchableOpacity>
-          </View>
-          <View style={s.inputRow}>
-            <TouchableOpacity style={s.iconBtn} onPress={comingSoon}>
-              <Text style={s.iconDisabled}>🎤</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.iconBtn} onPress={comingSoon}>
-              <Text style={s.iconDisabled}>📷</Text>
-            </TouchableOpacity>
-            <TextInput
-              style={s.input} value={draft} onChangeText={setDraft} multiline
-              placeholder="Answer, or ask about it…" placeholderTextColor={colors.inkFaint}
-              autoCapitalize="none"
-            />
-            <TouchableOpacity
-              style={[s.sendBtn, (!draft.trim() || thinking) && { opacity: 0.4 }]}
-              onPress={() => send()} disabled={!draft.trim() || thinking}
-            >
-              <Text style={s.sendText}>➤</Text>
-            </TouchableOpacity>
-          </View>
+          )}
         </View>
-      )}
+        <View style={s.inputRow}>
+          <TouchableOpacity style={s.iconBtn} onPress={comingSoon}>
+            <Text style={s.iconDisabled}>🎤</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.iconBtn} onPress={comingSoon}>
+            <Text style={s.iconDisabled}>📷</Text>
+          </TouchableOpacity>
+          <TextInput
+            style={s.input} value={draft} onChangeText={setDraft} multiline
+            placeholder={closed ? 'Any follow-up questions?' : 'Answer, or ask about it…'}
+            placeholderTextColor={colors.inkFaint}
+            autoCapitalize="none"
+          />
+          <TouchableOpacity
+            style={[s.sendBtn, (!draft.trim() || thinking) && { opacity: 0.4 }]}
+            onPress={() => send()} disabled={!draft.trim() || thinking}
+          >
+            <Text style={s.sendText}>➤</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -223,6 +242,7 @@ const s = StyleSheet.create({
   },
   verdictText: { fontSize: 22, fontWeight: '800', marginTop: 4 },
   goalNote: { color: colors.inkSoft, fontWeight: '600', marginTop: 6 },
+  followupHint: { color: colors.inkSoft, fontSize: 12.5, marginTop: 8 },
   composer: {
     borderTopWidth: 2, borderTopColor: colors.line, backgroundColor: colors.bg,
     paddingHorizontal: 10, paddingTop: 8, paddingBottom: 10,

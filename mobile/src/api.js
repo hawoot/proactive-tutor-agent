@@ -62,6 +62,8 @@ export const api = {
   // users / settings
   getUser: (uid) => call('GET', `/users/${uid}`),
   updateUser: (uid, patch) => call('PATCH', `/users/${uid}`, patch),
+  getSchedule: (uid) => call('GET', `/users/${uid}/schedule`),
+  putSchedule: (uid, windows) => call('PUT', `/users/${uid}/schedule`, { windows }),
 
   // devices
   registerDevice: (uid, channel, ref, label) =>

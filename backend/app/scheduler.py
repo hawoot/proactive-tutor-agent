@@ -16,24 +16,39 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from . import config, agent
 from .db import SessionLocal
-from .models import utcnow, User, Device, Enrollment, NotificationLog
+from .models import utcnow, User, Device, Enrollment, NotificationLog, NudgeWindow
 from .notifier import queue_notification, dispatch_pending
 
 
 # --- the fence: deterministic hard rules (never the LLM's call) ------------
 
-def local_hour(user: User, now: datetime) -> int:
+def _local(user: User, now: datetime) -> datetime:
     try:
         tz = ZoneInfo(user.timezone or "UTC")
     except Exception:
         tz = ZoneInfo("UTC")
-    return now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).hour
+    return now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
 
 
 def within_quiet_hours(user: User, now: datetime) -> bool:
-    h = local_hour(user, now)
+    h = _local(user, now).hour
     s, e = user.quiet_hours_start, user.quiet_hours_end
     return (h >= s or h < e) if s > e else (s <= h < e)
+
+
+def nudges_allowed_now(db: Session, user: User, now: datetime) -> bool:
+    """Painted week-grid windows rule when they exist; otherwise fall back
+    to the legacy quiet-hours pair. All in the user's timezone."""
+    windows = db.execute(
+        select(NudgeWindow).where(NudgeWindow.user_id == user.id)
+    ).scalars().all()
+    if not windows:
+        return not within_quiet_hours(user, now)
+    local = _local(user, now)
+    return any(
+        w.weekday == local.weekday() and w.start_hour <= local.hour < w.end_hour
+        for w in windows
+    )
 
 
 def nudges_today(db: Session, user_id: int, now: datetime) -> int:
@@ -49,7 +64,7 @@ def nudges_today(db: Session, user_id: int, now: datetime) -> int:
 
 
 def fence_blocks(db: Session, user: User, now: datetime) -> bool:
-    if within_quiet_hours(user, now):
+    if not nudges_allowed_now(db, user, now):
         return True
     if nudges_today(db, user.id, now) >= user.max_prompts_per_day:
         return True

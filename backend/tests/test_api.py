@@ -100,8 +100,22 @@ def test_everything():
         assert r["messages"][-1]["kind"] == "feedback"
         hist = c.get("/practice/messages?user_id=1&attempt_id=" + str(q["id"]), headers=H).json()
         assert len(hist["messages"]) >= 4
-        assert c.post("/practice/chat", json={"user_id": 1, "text": "more?",
-                                              "attempt_id": q["id"]}, headers=H).status_code == 400
+        # after marking, the conversation continues as follow-up (no re-marking)
+        r = c.post("/practice/chat", json={"user_id": 1, "text": "why is that right?",
+                                           "attempt_id": q["id"]}, headers=H).json()
+        assert r["closed"] and r["messages"][-1]["role"] == "tutor"
+        assert "follow" in r["messages"][-1]["content"].lower()
+        assert r["attempt"]["verdict"] == "correct"  # unchanged
+
+        # schedule: paint windows, fetch them back, junk rejected
+        ws = [{"weekday": d, "start_hour": 8, "end_hour": 21} for d in range(5)]
+        assert len(c.put("/users/1/schedule", json={"windows": ws}, headers=H).json()) == 5
+        assert len(c.get("/users/1/schedule", headers=H).json()) == 5
+        assert c.put("/users/1/schedule", json={"windows": [
+            {"weekday": 9, "start_hour": 8, "end_hour": 21}]}, headers=H).status_code == 422
+        assert c.put("/users/1/schedule", json={"windows": [
+            {"weekday": 1, "start_hour": 10, "end_hour": 9}]}, headers=H).status_code == 422
+        c.put("/users/1/schedule", json={"windows": []}, headers=H)  # clear -> legacy fallback
 
         # generate_only flips back to creative questions (reasoning stripped by the parser)
         c.patch(f"/enrollments/{enr2['id']}", json={"question_source": "generate_only"}, headers=H)

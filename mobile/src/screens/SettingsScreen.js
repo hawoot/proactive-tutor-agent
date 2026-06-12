@@ -1,12 +1,18 @@
-// Settings, grouped and in human words: connection, notifications,
-// learning preferences, demo data.
+// Settings - visual-first: paint your nudge schedule on a week grid, slide
+// your daily goal, pick a timezone from a list. Forms only where text is
+// genuinely text (server URL, your name).
 import React, { useCallback, useState } from 'react';
-import { Text, ScrollView, StyleSheet, View } from 'react-native';
+import { Text, ScrollView, StyleSheet, View, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, getConfig, saveConfig } from '../api';
 import { registerForPush } from '../push';
 import { Btn, Card, Field, ErrorText, SectionTitle } from '../components';
-import { colors, pad, type } from '../theme';
+import { WeekSchedule, GoalSlider, TimezonePicker } from '../widgets';
+import { colors, pad, radius, type } from '../theme';
+
+const DEFAULT_WINDOWS = [0, 1, 2, 3, 4, 5, 6].map((d) => ({
+  weekday: d, start_hour: 8, end_hour: 21,
+}));
 
 export default function SettingsScreen() {
   const [url, setUrl] = useState('');
@@ -14,22 +20,23 @@ export default function SettingsScreen() {
   const [userId, setUserId] = useState('1');
   const [connMsg, setConnMsg] = useState('');
   const [prefs, setPrefs] = useState(null);
+  const [windows, setWindows] = useState(null);
+  const [tzPickerOpen, setTzPickerOpen] = useState(false);
   const [prefsMsg, setPrefsMsg] = useState('');
   const [err, setErr] = useState('');
 
   const loadPrefs = useCallback(async () => {
     try {
       const { userId: uid } = await getConfig();
-      const u = await api.getUser(uid);
+      const [u, sched] = await Promise.all([api.getUser(uid), api.getSchedule(uid)]);
       setPrefs({
         name: u.name,
         timezone: u.timezone,
-        quiet_hours_start: String(u.quiet_hours_start),
-        quiet_hours_end: String(u.quiet_hours_end),
-        max_prompts_per_day: String(u.max_prompts_per_day),
-        daily_goal: String(u.daily_goal ?? 3),
+        max_prompts_per_day: u.max_prompts_per_day,
+        daily_goal: u.daily_goal ?? 3,
       });
-    } catch { setPrefs(null); }
+      setWindows(sched.length > 0 ? sched : DEFAULT_WINDOWS);
+    } catch { setPrefs(null); setWindows(null); }
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -60,14 +67,15 @@ export default function SettingsScreen() {
     setErr(''); setPrefsMsg('');
     try {
       const { userId: uid } = await getConfig();
-      await api.updateUser(uid, {
-        name: prefs.name,
-        timezone: prefs.timezone,
-        quiet_hours_start: parseInt(prefs.quiet_hours_start, 10),
-        quiet_hours_end: parseInt(prefs.quiet_hours_end, 10),
-        max_prompts_per_day: parseInt(prefs.max_prompts_per_day, 10),
-        daily_goal: parseInt(prefs.daily_goal, 10),
-      });
+      await Promise.all([
+        api.updateUser(uid, {
+          name: prefs.name,
+          timezone: prefs.timezone,
+          max_prompts_per_day: prefs.max_prompts_per_day,
+          daily_goal: Math.max(1, parseInt(prefs.daily_goal, 10) || 3),
+        }),
+        api.putSchedule(uid, windows || []),
+      ]);
       setPrefsMsg('✅ Saved');
     } catch (e) { setErr(e.message); }
   };
@@ -91,39 +99,44 @@ export default function SettingsScreen() {
 
       <SectionTitle>Notifications</SectionTitle>
       <Card>
-        <Text style={[type.meta, { marginBottom: 8 }]}>
-          Nudges arrive as push notifications once enabled on this phone.
-        </Text>
         <Btn label="🔔 Enable push notifications" kind="outline"
           onPress={async () => setConnMsg((await registerForPush()).msg)} />
       </Card>
 
-      {prefs && (
+      {prefs && windows && (
         <>
-          <SectionTitle>My tutor</SectionTitle>
+          <SectionTitle>Daily goal</SectionTitle>
           <Card>
-            <Field label="Daily goal (questions per day)" value={prefs.daily_goal}
-              onChangeText={setPref('daily_goal')} keyboardType="numeric"
-              hint="Powers the streak and the progress bar on Today." />
-            <Field label="Max nudges per day" value={prefs.max_prompts_per_day}
-              onChangeText={setPref('max_prompts_per_day')} keyboardType="numeric"
-              hint="The tutor never pings you more than this." />
-            <View style={s.row}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Field label="Quiet from (0-23)" value={prefs.quiet_hours_start}
-                  onChangeText={setPref('quiet_hours_start')} keyboardType="numeric" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Field label="until (0-23)" value={prefs.quiet_hours_end}
-                  onChangeText={setPref('quiet_hours_end')} keyboardType="numeric" />
-              </View>
-            </View>
-            <Field label="Timezone" value={prefs.timezone} onChangeText={setPref('timezone')}
-              autoCapitalize="none" hint="e.g. Europe/London - quiet hours use this." />
-            <Field label="Your name" value={prefs.name} onChangeText={setPref('name')} />
-            <Btn label="Save preferences" onPress={savePrefs} />
-            {prefsMsg ? <Text style={s.msg}>{prefsMsg}</Text> : null}
+            <Text style={[type.meta, { marginBottom: 8 }]}>
+              Questions you aim to answer per day - powers the streak.
+            </Text>
+            <GoalSlider value={prefs.daily_goal} onChange={setPref('daily_goal')} />
           </Card>
+
+          <SectionTitle>When can your tutor nudge you?</SectionTitle>
+          <Card>
+            <WeekSchedule windows={windows} onChange={setWindows} />
+            <View style={s.stepperRow}>
+              <Text style={{ ...type.body, flex: 1 }}>Max nudges per day</Text>
+              <Stepper
+                value={prefs.max_prompts_per_day}
+                onChange={setPref('max_prompts_per_day')}
+                min={0} max={20}
+              />
+            </View>
+            <TouchableOpacity style={s.tzButton} onPress={() => setTzPickerOpen(true)}>
+              <Text style={type.body}>🌍 Timezone</Text>
+              <Text style={s.tzValue}>{prefs.timezone.replace(/_/g, ' ')} ›</Text>
+            </TouchableOpacity>
+          </Card>
+
+          <SectionTitle>Me</SectionTitle>
+          <Card>
+            <Field label="Your name" value={prefs.name} onChangeText={setPref('name')} />
+          </Card>
+
+          <Btn label="Save preferences" onPress={savePrefs} />
+          {prefsMsg ? <Text style={[s.msg, { textAlign: 'center' }]}>{prefsMsg}</Text> : null}
         </>
       )}
 
@@ -135,12 +148,48 @@ export default function SettingsScreen() {
             catch (e) { setErr(e.message); }
           }} />
       </Card>
+
+      <TimezonePicker
+        visible={tzPickerOpen} value={prefs?.timezone}
+        onSelect={(tz) => setPref('timezone')(tz)}
+        onClose={() => setTzPickerOpen(false)}
+      />
     </ScrollView>
+  );
+}
+
+function Stepper({ value, onChange, min = 0, max = 99 }) {
+  const v = parseInt(value, 10) || 0;
+  return (
+    <View style={s.stepper}>
+      <TouchableOpacity style={s.stepBtn} onPress={() => v > min && onChange(v - 1)}>
+        <Text style={s.stepText}>−</Text>
+      </TouchableOpacity>
+      <Text style={s.stepValue}>{v}</Text>
+      <TouchableOpacity style={s.stepBtn} onPress={() => v < max && onChange(v + 1)}>
+        <Text style={s.stepText}>+</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   msg: { marginTop: 8, color: colors.ink, lineHeight: 20 },
-  row: { flexDirection: 'row' },
+  stepperRow: {
+    flexDirection: 'row', alignItems: 'center', marginTop: 14,
+    paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.line,
+  },
+  stepper: {
+    flexDirection: 'row', alignItems: 'center', borderWidth: 2,
+    borderColor: colors.line, borderRadius: radius.pill, overflow: 'hidden',
+  },
+  stepBtn: { paddingHorizontal: 14, paddingVertical: 6 },
+  stepText: { fontSize: 18, fontWeight: '800', color: colors.blue },
+  stepValue: { fontSize: 16, fontWeight: '800', color: colors.ink, minWidth: 36, textAlign: 'center' },
+  tzButton: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.line,
+  },
+  tzValue: { fontSize: 15, fontWeight: '700', color: colors.blue },
 });
