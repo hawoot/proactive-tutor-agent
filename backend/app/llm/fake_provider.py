@@ -4,7 +4,11 @@ from .base import LLMProvider
 
 
 class FakeProvider(LLMProvider):
-    def ask(self, prompt: str, max_tokens: int = 500) -> str:
+    def ask(self, prompt: str, max_tokens: int = 500,
+            images: list[str] | None = None) -> str:
+        # A photo answer is treated as a submitted answer -> mark it.
+        if images and "MODE:" in prompt:
+            return "MODE: MARK\nVERDICT: correct\nFEEDBACK: (fake provider) Read your photo - looks right."
         if "FOLLOW-UP" in prompt:  # post-verdict drill-down
             return "(fake provider) Good follow-up - here is a fuller explanation."
         if "MODE: COACH" in prompt:  # conversation turn

@@ -109,13 +109,14 @@ def chat(body: ChatRequest, db: Session = Depends(get_db)):
     and close the attempt; everything else gets Socratic coaching."""
     user = get_user_or_404(db, body.user_id)
     attempt = _resolve_attempt(db, body.user_id, body.attempt_id)
-    if not body.text.strip():
+    if not body.text.strip() and not body.images:
         raise HTTPException(400, "Empty message")
     if attempt.verdict:
         # marked already - keep talking: clarify, drill down, no re-marking
         agent.followup_turn(db, user, attempt, body.text.strip(), modality=body.modality)
     else:
-        agent.chat_turn(db, user, attempt, body.text.strip(), modality=body.modality)
+        agent.chat_turn(db, user, attempt, body.text.strip(),
+                        modality=body.modality, images=body.images)
     resp = _chat_response(db, attempt)
     db.commit()
     return resp

@@ -5,7 +5,7 @@ import {
   View, Text, TextInput, TouchableOpacity, ActivityIndicator, Modal,
   ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Animated, Image,
 } from 'react-native';
-import { colors, radius, pad, type } from './theme';
+import { colors, radius, pad, type, shadow } from './theme';
 import { MASCOT } from './brand';
 
 // Phil himself. A slow idle bob - alive, never distracting.
@@ -51,8 +51,8 @@ export function Btn({ label, onPress, busy, color = 'primary', kind = 'solid', s
       style={[
         s.btn, small && s.btnSmall,
         outline
-          ? { backgroundColor: colors.card, borderWidth: 2, borderColor: colors.line, borderBottomWidth: 4 }
-          : { backgroundColor: bg, borderBottomWidth: 4, borderBottomColor: edge },
+          ? { backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.line, borderBottomWidth: 4, ...shadow.sm }
+          : { backgroundColor: bg, borderBottomWidth: 4, borderBottomColor: edge, ...shadow.sm },
       ]}
     >
       {busy ? <ActivityIndicator color={outline ? colors.ink : '#fff'} /> : (
@@ -66,7 +66,7 @@ export function Btn({ label, onPress, busy, color = 'primary', kind = 'solid', s
 
 export function Card({ children, style, tint }) {
   return (
-    <View style={[s.card, tint && { borderColor: tint, borderWidth: 2 }, style]}>
+    <View style={[s.card, tint && { borderColor: tint, borderWidth: 1.5 }, style]}>
       {children}
     </View>
   );
@@ -188,7 +188,7 @@ const s = StyleSheet.create({
   ghostText: { color: colors.blue, fontWeight: '700', fontSize: 15 },
   card: {
     backgroundColor: colors.card, borderRadius: radius.lg, padding: pad,
-    borderWidth: 2, borderColor: colors.line, marginVertical: 6,
+    marginVertical: 7, ...shadow.sm,
   },
   chip: {
     borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3,
@@ -200,8 +200,8 @@ const s = StyleSheet.create({
   fieldLabel: { ...type.label, marginBottom: 6 },
   fieldHint: { fontSize: 12, color: colors.inkFaint, marginTop: 4 },
   input: {
-    backgroundColor: colors.card, borderRadius: radius.md, padding: 13,
-    fontSize: 16, borderWidth: 2, borderColor: colors.line, color: colors.ink,
+    backgroundColor: colors.bgSoft, borderRadius: radius.md, padding: 14,
+    fontSize: 16, borderWidth: 1, borderColor: colors.line, color: colors.ink,
   },
   sectionRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
