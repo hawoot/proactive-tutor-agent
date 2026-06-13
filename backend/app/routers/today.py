@@ -9,6 +9,7 @@ from .. import agent
 from ..db import get_db
 from ..models import utcnow, Attempt, Enrollment, SkillState
 from ..schemas import AttemptOut
+from ..scheduler import next_nudge_at
 from .users import get_user_or_404
 
 router = APIRouter(tags=["today"])
@@ -82,12 +83,16 @@ def today(user_id: int, db: Session = Depends(get_db)):
         .order_by(Attempt.asked_at.desc()).limit(10)
     ).scalars().all()
 
+    # Compute the next ping live from the user's chosen times, so it's always
+    # accurate (never a stale parked value) and matches the scheduler exactly.
+    nxt = next_nudge_at(db, user, now)
+
     return {
         "streak_days": _streak_days(db, user_id, now.date()),
         "answered_today": answered_today,
         "daily_goal": user.daily_goal,
         "open_attempt": _attempt_out(open_attempt) if open_attempt else None,
-        "next_nudge_at": user.next_decision_at.isoformat() if user.next_decision_at else None,
+        "next_nudge_at": nxt.isoformat() if nxt else None,
         "due_now": due_now,
         "due_today": due_today,
         "exams": sorted(exams, key=lambda e: e["days_left"]),

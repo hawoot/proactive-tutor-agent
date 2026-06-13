@@ -54,7 +54,7 @@ export default function TodayScreen({ navigation }) {
               <Text style={s.goalText}>
                 {goalDone ? '🎯 Daily goal done!' : `Today: ${data.answered_today} / ${data.daily_goal}`}
               </Text>
-              <Bar value={data.answered_today / Math.max(data.daily_goal, 1)} color={colors.primary} height={14} />
+              <Bar value={data.answered_today / Math.max(data.daily_goal, 1)} color={colors.primary} height={8} />
             </View>
           </View>
 
@@ -137,7 +137,8 @@ export default function TodayScreen({ navigation }) {
                 return (
                   <TimelineItem key={a.id} emoji={v.emoji} color={v.color}
                     title={a.skill_name || 'Practice question'}
-                    sub={`${v.label} · ${dayLabel(a.answered_at || a.asked_at)}`} />
+                    sub={`${v.label} · ${dayLabel(a.answered_at || a.asked_at)} · tap to revisit`}
+                    onPress={() => navigation.navigate('Practice', { attemptId: a.id })} />
                 );
               })}
             </>
@@ -164,9 +165,10 @@ function GreetingRow({ goalDone }) {
   );
 }
 
-function TimelineItem({ emoji, color, title, sub }) {
+function TimelineItem({ emoji, color, title, sub, onPress }) {
+  const Wrap = onPress ? TouchableOpacity : View;
   return (
-    <View style={s.tlRow}>
+    <Wrap style={s.tlRow} onPress={onPress} activeOpacity={0.7}>
       <View style={s.tlRail}>
         <View style={[s.tlDot, { backgroundColor: (color || colors.line) + '22', borderColor: color || colors.line }]}>
           <Text style={{ fontSize: 15 }}>{emoji}</Text>
@@ -174,10 +176,10 @@ function TimelineItem({ emoji, color, title, sub }) {
         <View style={s.tlLine} />
       </View>
       <View style={s.tlContent}>
-        <Text style={s.tlTitle}>{title}</Text>
+        <Text style={s.tlTitle}>{title}{onPress ? '  ›' : ''}</Text>
         {sub ? <Text style={type.meta}>{sub}</Text> : null}
       </View>
-    </View>
+    </Wrap>
   );
 }
 

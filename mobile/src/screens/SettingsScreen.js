@@ -7,12 +7,14 @@ import { useFocusEffect } from '@react-navigation/native';
 import { api, getConfig, saveConfig } from '../api';
 import { registerForPush } from '../push';
 import { Btn, Card, Field, ErrorText, SectionTitle } from '../components';
-import { WeekSchedule, GoalSlider, TimezonePicker } from '../widgets';
+import { NudgeTimes, GoalSlider, TimezonePicker } from '../widgets';
 import { colors, pad, radius, type } from '../theme';
 
-const DEFAULT_WINDOWS = [0, 1, 2, 3, 4, 5, 6].map((d) => ({
-  weekday: d, start_hour: 8, end_hour: 21,
-}));
+// Sensible starting point: a morning and an early-evening ping, every day.
+const DEFAULT_TIMES = [0, 1, 2, 3, 4, 5, 6].flatMap((d) => [
+  { weekday: d, hour: 9, minute: 0 },
+  { weekday: d, hour: 18, minute: 0 },
+]);
 
 export default function SettingsScreen() {
   const [url, setUrl] = useState('');
@@ -20,7 +22,7 @@ export default function SettingsScreen() {
   const [userId, setUserId] = useState('1');
   const [connMsg, setConnMsg] = useState('');
   const [prefs, setPrefs] = useState(null);
-  const [windows, setWindows] = useState(null);
+  const [times, setTimes] = useState(null);
   const [tzPickerOpen, setTzPickerOpen] = useState(false);
   const [prefsMsg, setPrefsMsg] = useState('');
   const [err, setErr] = useState('');
@@ -35,8 +37,8 @@ export default function SettingsScreen() {
         max_prompts_per_day: u.max_prompts_per_day,
         daily_goal: u.daily_goal ?? 3,
       });
-      setWindows(sched.length > 0 ? sched : DEFAULT_WINDOWS);
-    } catch { setPrefs(null); setWindows(null); }
+      setTimes(sched.length > 0 ? sched : DEFAULT_TIMES);
+    } catch { setPrefs(null); setTimes(null); }
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -74,7 +76,7 @@ export default function SettingsScreen() {
           max_prompts_per_day: prefs.max_prompts_per_day,
           daily_goal: Math.max(1, parseInt(prefs.daily_goal, 10) || 3),
         }),
-        api.putSchedule(uid, windows || []),
+        api.putSchedule(uid, times || []),
       ]);
       setPrefsMsg('✅ Saved');
     } catch (e) { setErr(e.message); }
@@ -103,7 +105,7 @@ export default function SettingsScreen() {
           onPress={async () => setConnMsg((await registerForPush()).msg)} />
       </Card>
 
-      {prefs && windows && (
+      {prefs && times && (
         <>
           <SectionTitle>Daily goal</SectionTitle>
           <Card>
@@ -113,11 +115,11 @@ export default function SettingsScreen() {
             <GoalSlider value={prefs.daily_goal} onChange={setPref('daily_goal')} />
           </Card>
 
-          <SectionTitle>When can Nejma nudge you?</SectionTitle>
+          <SectionTitle>When should Nejma nudge you?</SectionTitle>
           <Card>
-            <WeekSchedule windows={windows} onChange={setWindows} />
+            <NudgeTimes times={times} onChange={setTimes} />
             <View style={s.stepperRow}>
-              <Text style={{ ...type.body, flex: 1 }}>Max nudges per day</Text>
+              <Text style={{ ...type.body, flex: 1 }}>Daily cap (safety limit)</Text>
               <Stepper
                 value={prefs.max_prompts_per_day}
                 onChange={setPref('max_prompts_per_day')}

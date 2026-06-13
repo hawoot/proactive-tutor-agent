@@ -1,205 +1,178 @@
-// Visual controls: paint-the-week schedule grid (with two-way linked table),
-// a notch slider for the daily goal, and a pick-from-list timezone sheet.
-// Rule of the house: fewer forms, more touching.
+// Visual controls for Settings:
+//   NudgeTimes  - pick the exact clock times you want to be nudged, on the
+//                 days you choose. Times and the day toggles are two views of
+//                 the same data; edit either and the other reflects it.
+//   GoalSlider  - a real draggable slider for the daily goal.
+//   TimezonePicker - pick-from-list sheet.
+// Rule of the house: fewer forms, more tapping.
 import React, { useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
-import { Sheet } from './components';
+import Slider from '@react-native-community/slider';
+import { Sheet, Btn } from './components';
 import { colors, radius, type } from './theme';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const ALL = [0, 1, 2, 3, 4, 5, 6];
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
-// One-tap starting points; the grid below is for fine-tuning. Tapping a
-// preset adds its hours; tapping again (when fully on) removes them.
-const PRESETS = [
-  { label: '🌅 Mornings', windows: ALL.map((d) => ({ weekday: d, start_hour: 7, end_hour: 9 })) },
-  { label: '🥪 Lunch breaks', windows: [0, 1, 2, 3, 4].map((d) => ({ weekday: d, start_hour: 12, end_hour: 14 })) },
-  { label: '🌙 Evenings', windows: ALL.map((d) => ({ weekday: d, start_hour: 18, end_hour: 22 })) },
-  { label: '🛋️ Weekends', windows: [5, 6].map((d) => ({ weekday: d, start_hour: 10, end_hour: 20 })) },
-];
-
-// --- windows <-> grid helpers -------------------------------------------------
-
-function windowsToGrid(windows) {
-  const grid = Array.from({ length: 7 }, () => Array(24).fill(false));
-  for (const w of windows || []) {
-    for (let h = w.start_hour; h < w.end_hour; h++) grid[w.weekday][h] = true;
-  }
-  return grid;
-}
-
-function gridToWindows(grid) {
-  const windows = [];
-  grid.forEach((day, weekday) => {
-    let start = null;
-    for (let h = 0; h <= 24; h++) {
-      const on = h < 24 && day[h];
-      if (on && start === null) start = h;
-      if (!on && start !== null) {
-        windows.push({ weekday, start_hour: start, end_hour: h });
-        start = null;
-      }
-    }
-  });
-  return windows;
-}
-
-// --- WeekSchedule ----------------------------------------------------------------
-
-export function WeekSchedule({ windows, onChange }) {
-  const grid = useMemo(() => windowsToGrid(windows), [windows]);
-
-  const toggle = (d, h) => {
-    const g = grid.map((row) => [...row]);
-    g[d][h] = !g[d][h];
-    onChange(gridToWindows(g));
-  };
-
-  const adjust = (idx, field, delta) => {
-    const next = windows.map((w, i) => i === idx ? { ...w, [field]: w[field] + delta } : w);
-    const w = next[idx];
-    if (w.start_hour < 0 || w.end_hour > 24 || w.end_hour <= w.start_hour) return;
-    onChange(gridToWindows(windowsToGrid(next)));  // normalise overlaps/merges
-  };
-
-  const removeWindow = (idx) => onChange(windows.filter((_, i) => i !== idx));
-
-  const copyMondayToAll = () => {
-    const monday = windows.filter((w) => w.weekday === 0);
-    onChange(ALL.flatMap((d) => monday.map((w) => ({ ...w, weekday: d }))));
-  };
-
-  const presetActive = (p) => p.windows.every((w) => {
-    for (let h = w.start_hour; h < w.end_hour; h++) if (!grid[w.weekday][h]) return false;
-    return true;
-  });
-
-  const togglePreset = (p) => {
-    const g = grid.map((row) => [...row]);
-    const on = !presetActive(p);
-    for (const w of p.windows) {
-      for (let h = w.start_hour; h < w.end_hour; h++) g[w.weekday][h] = on;
-    }
-    onChange(gridToWindows(g));
-  };
-
-  return (
-    <View>
-      {/* presets first, grid for fine-tuning */}
-      <View style={s.presetRow}>
-        {PRESETS.map((p) => {
-          const on = presetActive(p);
-          return (
-            <TouchableOpacity key={p.label} onPress={() => togglePreset(p)}
-              style={[s.presetChip, on && s.presetChipOn]}>
-              <Text style={[s.presetText, on && s.presetTextOn]}>{p.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-        {windows.length > 0 && (
-          <TouchableOpacity onPress={() => onChange([])} style={s.presetChip}>
-            <Text style={s.presetText}>✕ Clear</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* hour scale */}
-      <View style={s.scaleRow}>
-        <View style={{ width: 36 }} />
-        {[0, 6, 12, 18].map((h) => (
-          <Text key={h} style={s.scaleText}>{h}:00</Text>
-        ))}
-        <Text style={[s.scaleText, { flex: 0 }]}>24</Text>
-      </View>
-
-      {/* the paintable grid */}
-      {DAYS.map((day, d) => (
-        <View key={day} style={s.dayRow}>
-          <Text style={s.dayLabel}>{day}</Text>
-          <View style={s.cellsRow}>
-            {grid[d].map((on, h) => (
-              <TouchableOpacity
-                key={h}
-                style={[s.cell, on && s.cellOn,
-                  h % 6 === 0 && h > 0 && { marginLeft: 3 }]}
-                onPress={() => toggle(d, h)}
-              />
-            ))}
-          </View>
-        </View>
-      ))}
-      <Text style={s.hint}>Tap a preset, then fine-tune by painting hours. Filled = Nejma may nudge you.</Text>
-      <TouchableOpacity onPress={copyMondayToAll} style={{ marginTop: 6 }}>
-        <Text style={s.copyLink}>📋 Copy Monday to every day</Text>
-      </TouchableOpacity>
-
-      {/* the linked table - edits here repaint the grid above */}
-      {windows.length > 0 && (
-        <View style={{ marginTop: 12 }}>
-          {windows.map((w, i) => (
-            <View key={`${w.weekday}-${w.start_hour}-${i}`} style={s.windowRow}>
-              <Text style={s.windowDay}>{DAYS[w.weekday]}</Text>
-              <Nudger value={`${pad2(w.start_hour)}:00`}
-                onDown={() => adjust(i, 'start_hour', -1)} onUp={() => adjust(i, 'start_hour', +1)} />
-              <Text style={s.windowDash}>→</Text>
-              <Nudger value={`${pad2(w.end_hour)}:00`}
-                onDown={() => adjust(i, 'end_hour', -1)} onUp={() => adjust(i, 'end_hour', +1)} />
-              <TouchableOpacity onPress={() => removeWindow(i)} style={{ padding: 6 }}>
-                <Text style={{ color: colors.bad, fontWeight: '800' }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </View>
-      )}
-      {windows.length === 0 && (
-        <Text style={[s.hint, { color: colors.orangeDark, marginTop: 8 }]}>
-          No allowed hours = no nudges at all. Tap a preset or paint at least one block.
-        </Text>
-      )}
-    </View>
-  );
-}
+// --- time helpers ------------------------------------------------------------
 
 function pad2(n) { return String(n).padStart(2, '0'); }
 
-function Nudger({ value, onDown, onUp }) {
-  return (
-    <View style={s.nudger}>
-      <TouchableOpacity onPress={onDown} style={s.nudgeBtn}><Text style={s.nudgeText}>‹</Text></TouchableOpacity>
-      <Text style={s.nudgeValue}>{value}</Text>
-      <TouchableOpacity onPress={onUp} style={s.nudgeBtn}><Text style={s.nudgeText}>›</Text></TouchableOpacity>
-    </View>
-  );
+// 24h internally, friendly 12h on screen ("5:00 PM").
+function fmtTime(hour, minute) {
+  const h12 = hour % 12 || 12;
+  return `${h12}:${pad2(minute)} ${hour < 12 ? 'AM' : 'PM'}`;
 }
 
-// --- GoalSlider --------------------------------------------------------------------
+// rows  <->  {days, clocks}.  rows = days x clocks (cross product), so a single
+// flat list of {weekday,hour,minute} fully captures "these times, these days".
+function rowsToModel(rows) {
+  const days = [...new Set((rows || []).map((r) => r.weekday))].sort((a, b) => a - b);
+  const seen = new Set();
+  const clocks = [];
+  for (const r of rows || []) {
+    const key = r.hour * 60 + r.minute;
+    if (!seen.has(key)) { seen.add(key); clocks.push({ hour: r.hour, minute: r.minute }); }
+  }
+  clocks.sort((a, b) => (a.hour * 60 + a.minute) - (b.hour * 60 + b.minute));
+  // No rows yet -> show all days selected as a sensible starting point.
+  return { days: days.length ? days : ALL_DAYS, clocks };
+}
 
-export function GoalSlider({ value, onChange, max = 10 }) {
-  const v = Math.max(0, parseInt(value, 10) || 0);
+function modelToRows(days, clocks) {
+  const rows = [];
+  for (const d of days) for (const c of clocks) rows.push({ weekday: d, hour: c.hour, minute: c.minute });
+  return rows;
+}
+
+// --- NudgeTimes --------------------------------------------------------------
+
+export function NudgeTimes({ times, onChange }) {
+  const { days, clocks } = useMemo(() => rowsToModel(times), [times]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const toggleDay = (d) => {
+    const next = days.includes(d) ? days.filter((x) => x !== d) : [...days, d].sort((a, b) => a - b);
+    if (next.length === 0) return;  // keep at least one day; clear times to turn off
+    onChange(modelToRows(next, clocks));
+  };
+
+  const addClock = (hour, minute) => {
+    if (clocks.some((c) => c.hour === hour && c.minute === minute)) return;
+    onChange(modelToRows(days, [...clocks, { hour, minute }]));
+  };
+
+  const removeClock = (c) =>
+    onChange(modelToRows(days, clocks.filter((x) => !(x.hour === c.hour && x.minute === c.minute))));
+
   return (
-    <View style={s.sliderRow}>
-      <View style={s.notchRow}>
-        {[...Array(max)].map((_, i) => {
-          const n = i + 1;
-          const on = v >= n;
+    <View>
+      <Text style={s.subLabel}>On these days</Text>
+      <View style={s.dayRow}>
+        {DAYS.map((label, d) => {
+          const on = days.includes(d);
           return (
-            <TouchableOpacity key={n} style={s.notchTap} onPress={() => onChange(n)}>
-              <View style={[s.notch, on && s.notchOn, v === n && s.notchCurrent]}>
-                {v === n ? <Text style={s.notchLabel}>{n}</Text> : null}
-              </View>
+            <TouchableOpacity key={label} onPress={() => toggleDay(d)}
+              style={[s.dayChip, on && s.dayChipOn]}>
+              <Text style={[s.dayChipText, on && s.dayChipTextOn]}>{label}</Text>
             </TouchableOpacity>
           );
         })}
       </View>
-      <TextInput
-        style={s.sliderInput} keyboardType="numeric"
-        value={String(value)} onChangeText={(t) => onChange(t.replace(/[^0-9]/g, ''))}
-      />
+
+      <Text style={[s.subLabel, { marginTop: 14 }]}>At these times</Text>
+      {clocks.length === 0 ? (
+        <Text style={[s.hint, { color: colors.orangeDark }]}>
+          No times yet - add at least one, or you won't be nudged.
+        </Text>
+      ) : null}
+      <View style={s.timeWrap}>
+        {clocks.map((c) => (
+          <View key={`${c.hour}:${c.minute}`} style={s.timeChip}>
+            <Text style={s.timeChipText}>{fmtTime(c.hour, c.minute)}</Text>
+            <TouchableOpacity onPress={() => removeClock(c)} hitSlop={8} style={{ marginLeft: 6 }}>
+              <Text style={s.timeChipX}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+        <TouchableOpacity style={s.addChip} onPress={() => setPickerOpen(true)}>
+          <Text style={s.addChipText}>+ Add time</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={s.hint}>Nejma pings you at each time, on each chosen day.</Text>
+
+      <TimePickerSheet visible={pickerOpen} onClose={() => setPickerOpen(false)} onPick={addClock} />
     </View>
   );
 }
 
-// --- TimezonePicker -------------------------------------------------------------------
+const HOURS = [...Array(24)].map((_, h) => h);
+const MINUTES = [0, 15, 30, 45];
+
+function TimePickerSheet({ visible, onClose, onPick }) {
+  const [hour, setHour] = useState(9);
+  const [minute, setMinute] = useState(0);
+  return (
+    <Sheet visible={visible} title="Add a time" onClose={onClose}>
+      <Text style={s.subLabel}>Hour</Text>
+      <View style={s.hourGrid}>
+        {HOURS.map((h) => {
+          const on = h === hour;
+          return (
+            <TouchableOpacity key={h} onPress={() => setHour(h)}
+              style={[s.hourCell, on && s.hourCellOn]}>
+              <Text style={[s.hourText, on && s.hourTextOn]}>{h % 12 || 12}{h < 12 ? 'a' : 'p'}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <Text style={[s.subLabel, { marginTop: 12 }]}>Minute</Text>
+      <View style={s.minRow}>
+        {MINUTES.map((m) => {
+          const on = m === minute;
+          return (
+            <TouchableOpacity key={m} onPress={() => setMinute(m)}
+              style={[s.minCell, on && s.minCellOn]}>
+              <Text style={[s.minText, on && s.minTextOn]}>:{pad2(m)}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <View style={{ marginTop: 16 }}>
+        <Btn label={`Add ${fmtTime(hour, minute)}`} onPress={() => { onPick(hour, minute); onClose(); }} />
+      </View>
+    </Sheet>
+  );
+}
+
+// --- GoalSlider (real draggable slider) --------------------------------------
+
+export function GoalSlider({ value, onChange, max = 10 }) {
+  const v = Math.max(1, Math.min(max, parseInt(value, 10) || 1));
+  return (
+    <View>
+      <View style={s.goalHead}>
+        <Text style={s.goalValue}>{v}</Text>
+        <Text style={s.goalUnit}>question{v > 1 ? 's' : ''} / day</Text>
+      </View>
+      <Slider
+        style={{ width: '100%', height: 40 }}
+        minimumValue={1} maximumValue={max} step={1} value={v}
+        onValueChange={(n) => onChange(Math.round(n))}
+        minimumTrackTintColor={colors.primary}
+        maximumTrackTintColor={colors.line}
+        thumbTintColor={colors.primaryDark}
+      />
+      <View style={s.goalScale}>
+        <Text style={s.goalScaleTxt}>1</Text>
+        <Text style={s.goalScaleTxt}>{max}</Text>
+      </View>
+    </View>
+  );
+}
+
+// --- TimezonePicker ----------------------------------------------------------
 
 const COMMON_TIMEZONES = [
   'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid', 'Europe/Rome',
@@ -249,57 +222,52 @@ export function TimezonePicker({ visible, value, onSelect, onClose }) {
 }
 
 const s = StyleSheet.create({
-  presetRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10 },
-  presetChip: {
-    borderWidth: 2, borderColor: colors.line, borderRadius: radius.pill,
-    paddingHorizontal: 12, paddingVertical: 6, marginRight: 8, marginBottom: 6,
-    backgroundColor: colors.card,
+  subLabel: { ...type.label, marginBottom: 8 },
+  dayRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  dayChip: {
+    flex: 1, marginHorizontal: 2, paddingVertical: 9, borderRadius: radius.md,
+    borderWidth: 2, borderColor: colors.line, backgroundColor: colors.card, alignItems: 'center',
   },
-  presetChipOn: { borderColor: colors.primary, backgroundColor: colors.primary + '14' },
-  presetText: { fontSize: 13, fontWeight: '700', color: colors.inkSoft },
-  presetTextOn: { color: colors.primaryDark },
-  scaleRow: { flexDirection: 'row', marginBottom: 4 },
-  scaleText: { flex: 1, fontSize: 10, color: colors.inkFaint, fontWeight: '700' },
-  dayRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  dayLabel: { width: 36, fontSize: 12, fontWeight: '800', color: colors.inkSoft },
-  cellsRow: { flex: 1, flexDirection: 'row' },
-  cell: {
-    flex: 1, height: 26, backgroundColor: colors.line, marginHorizontal: 0.5,
-    borderRadius: 3,
+  dayChipOn: { borderColor: colors.primary, backgroundColor: colors.primary + '14' },
+  dayChipText: { fontSize: 11, fontWeight: '800', color: colors.inkSoft },
+  dayChipTextOn: { color: colors.primaryDark },
+  timeWrap: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 2 },
+  timeChip: {
+    flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderColor: colors.primary,
+    backgroundColor: colors.primary + '14', borderRadius: radius.pill,
+    paddingVertical: 7, paddingHorizontal: 12, marginRight: 8, marginBottom: 8,
   },
-  cellOn: { backgroundColor: colors.primary },
+  timeChipText: { fontSize: 14, fontWeight: '800', color: colors.primaryDark },
+  timeChipX: { fontSize: 12, fontWeight: '800', color: colors.bad },
+  addChip: {
+    borderWidth: 2, borderColor: colors.line, borderStyle: 'dashed', borderRadius: radius.pill,
+    paddingVertical: 7, paddingHorizontal: 14, marginRight: 8, marginBottom: 8, backgroundColor: colors.card,
+  },
+  addChipText: { fontSize: 14, fontWeight: '800', color: colors.blue },
   hint: { fontSize: 12, color: colors.inkSoft, marginTop: 6 },
-  copyLink: { fontSize: 13, fontWeight: '700', color: colors.blue },
-  windowRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.line,
+  hourGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  hourCell: {
+    width: '16.66%', paddingVertical: 9, alignItems: 'center',
   },
-  windowDay: { width: 40, fontWeight: '800', color: colors.ink },
-  windowDash: { color: colors.inkFaint, fontWeight: '800' },
-  nudger: {
-    flexDirection: 'row', alignItems: 'center', borderWidth: 2,
-    borderColor: colors.line, borderRadius: radius.pill, overflow: 'hidden',
+  hourCellOn: {},
+  hourText: {
+    fontSize: 14, fontWeight: '700', color: colors.ink, width: 42, textAlign: 'center',
+    paddingVertical: 6, borderRadius: radius.pill, overflow: 'hidden',
   },
-  nudgeBtn: { paddingHorizontal: 10, paddingVertical: 4 },
-  nudgeText: { fontSize: 16, fontWeight: '800', color: colors.blue },
-  nudgeValue: { fontSize: 14, fontWeight: '700', color: colors.ink, minWidth: 48, textAlign: 'center' },
-  sliderRow: { flexDirection: 'row', alignItems: 'center' },
-  notchRow: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-  notchTap: { flex: 1, alignItems: 'center', paddingVertical: 6 },
-  notch: {
-    width: 16, height: 16, borderRadius: 8, backgroundColor: colors.line,
-    alignItems: 'center', justifyContent: 'center',
+  hourTextOn: { backgroundColor: colors.primary, color: '#fff' },
+  minRow: { flexDirection: 'row' },
+  minCell: {
+    flex: 1, marginHorizontal: 4, paddingVertical: 10, borderRadius: radius.md,
+    borderWidth: 2, borderColor: colors.line, backgroundColor: colors.card, alignItems: 'center',
   },
-  notchOn: { backgroundColor: colors.primary },
-  notchCurrent: {
-    width: 28, height: 28, borderRadius: 14, borderWidth: 3, borderColor: colors.primaryDark,
-  },
-  notchLabel: { color: '#fff', fontWeight: '800', fontSize: 12 },
-  sliderInput: {
-    width: 60, marginLeft: 10, borderWidth: 2, borderColor: colors.line,
-    borderRadius: radius.md, padding: 8, fontSize: 16, fontWeight: '800',
-    textAlign: 'center', color: colors.ink, backgroundColor: colors.card,
-  },
+  minCellOn: { borderColor: colors.primary, backgroundColor: colors.primary + '14' },
+  minText: { fontSize: 15, fontWeight: '800', color: colors.inkSoft },
+  minTextOn: { color: colors.primaryDark },
+  goalHead: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 2 },
+  goalValue: { fontSize: 32, fontWeight: '800', color: colors.primaryDark },
+  goalUnit: { fontSize: 14, fontWeight: '700', color: colors.inkSoft, marginLeft: 8 },
+  goalScale: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -4 },
+  goalScaleTxt: { fontSize: 11, color: colors.inkFaint, fontWeight: '700' },
   tzFilter: {
     borderWidth: 2, borderColor: colors.line, borderRadius: radius.md,
     padding: 10, fontSize: 15, color: colors.ink, backgroundColor: colors.card,

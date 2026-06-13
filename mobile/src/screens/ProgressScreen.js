@@ -1,7 +1,7 @@
 // Progress: the big picture - streak, totals, a week of activity, then
 // per-course mastery with the weakest skills surfaced first.
 import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, RefreshControl, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, StyleSheet, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, getConfig } from '../api';
 import { Card, Chip, Bar, ErrorText, EmptyState, SectionTitle } from '../components';
@@ -9,7 +9,7 @@ import { colors, pad, type, utcDate, dayLabel } from '../theme';
 import { VERDICTS } from '../labels';
 import { masteryRank } from '../brand';
 
-export default function ProgressScreen() {
+export default function ProgressScreen({ navigation }) {
   const [enrollments, setEnrollments] = useState(null);
   const [attempts, setAttempts] = useState([]);
   const [todayData, setTodayData] = useState(null);
@@ -117,13 +117,16 @@ export default function ProgressScreen() {
           {answered.slice(0, 15).map((a) => {
             const v = VERDICTS[a.verdict] || VERDICTS.skipped;
             return (
-              <Card key={a.id} style={{ paddingVertical: 10 }}>
-                <View style={s.histHead}>
-                  <Text style={s.histSkill}>{v.emoji} {a.skill_name || 'Question'}</Text>
-                  <Text style={type.meta}>{dayLabel(a.answered_at)}</Text>
-                </View>
-                <Text style={type.meta} numberOfLines={2}>{a.question}</Text>
-              </Card>
+              <TouchableOpacity key={a.id} activeOpacity={0.7}
+                onPress={() => navigation.navigate('Practice', { attemptId: a.id })}>
+                <Card style={{ paddingVertical: 10 }}>
+                  <View style={s.histHead}>
+                    <Text style={s.histSkill}>{v.emoji} {a.skill_name || 'Question'}  ›</Text>
+                    <Text style={type.meta}>{dayLabel(a.answered_at)}</Text>
+                  </View>
+                  <Text style={type.meta} numberOfLines={2}>{a.question}</Text>
+                </Card>
+              </TouchableOpacity>
             );
           })}
         </>
