@@ -107,15 +107,18 @@ def test_everything():
         assert "follow" in r["messages"][-1]["content"].lower()
         assert r["attempt"]["verdict"] == "correct"  # unchanged
 
-        # schedule: paint windows, fetch them back, junk rejected
-        ws = [{"weekday": d, "start_hour": 8, "end_hour": 21} for d in range(5)]
-        assert len(c.put("/users/1/schedule", json={"windows": ws}, headers=H).json()) == 5
-        assert len(c.get("/users/1/schedule", headers=H).json()) == 5
-        assert c.put("/users/1/schedule", json={"windows": [
-            {"weekday": 9, "start_hour": 8, "end_hour": 21}]}, headers=H).status_code == 422
-        assert c.put("/users/1/schedule", json={"windows": [
-            {"weekday": 1, "start_hour": 10, "end_hour": 9}]}, headers=H).status_code == 422
-        c.put("/users/1/schedule", json={"windows": []}, headers=H)  # clear -> legacy fallback
+        # schedule: pick exact clock times, fetch them back, junk rejected
+        ts = [{"weekday": d, "hour": 9, "minute": 0} for d in range(7)] + \
+             [{"weekday": d, "hour": 18, "minute": 30} for d in range(7)]
+        assert len(c.put("/users/1/schedule", json={"times": ts}, headers=H).json()) == 14
+        assert len(c.get("/users/1/schedule", headers=H).json()) == 14
+        assert c.put("/users/1/schedule", json={"times": [
+            {"weekday": 9, "hour": 9, "minute": 0}]}, headers=H).status_code == 422
+        assert c.put("/users/1/schedule", json={"times": [
+            {"weekday": 1, "hour": 25, "minute": 0}]}, headers=H).status_code == 422
+        # leave a valid all-day schedule so the scheduler has slots to fire on
+        c.put("/users/1/schedule", json={"times": [
+            {"weekday": d, "hour": 9, "minute": 0} for d in range(7)]}, headers=H)
 
         # generate_only flips back to creative questions (reasoning stripped by the parser)
         c.patch(f"/enrollments/{enr2['id']}", json={"question_source": "generate_only"}, headers=H)
@@ -145,8 +148,7 @@ def test_everything():
         from app.models import User, NotificationLog
         with SessionLocal() as db:
             for usr in db.execute(select(User)).scalars():
-                usr.quiet_hours_start = usr.quiet_hours_end = 0
-                usr.next_decision_at = None
+                usr.next_decision_at = None  # mark due; user 1 has nudge times
             db.commit()
         scheduler.tick()
         with SessionLocal() as db:

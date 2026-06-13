@@ -1,6 +1,11 @@
 """
 The scheduler - the product's moat. Pure, deterministic decisions over good
-state. Pipeline per due user:  fence -> decide -> phrase -> notify -> reschedule
+state. Pipeline per due user:  pick-time -> fence -> ask -> notify -> reschedule
+
+Scheduling model: the user picks EXACT clock times to be nudged (e.g. 11:00,
+13:00, 17:00 on chosen weekdays), in their own timezone. The scheduler fires
+at each. No times set = no scheduled nudges. This replaced the old "allowed
+windows + cadence" model, which users found hard to reason about.
 
 Two run modes (config.SCHEDULER_MODE):
   embedded   : a background thread inside the API process - the default, and
@@ -16,40 +21,54 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from . import config, agent
 from .db import SessionLocal
-from .models import utcnow, User, Device, Enrollment, NotificationLog, NudgeWindow
+from .models import utcnow, User, Device, Enrollment, NotificationLog, NudgeTime
 from .notifier import queue_notification, dispatch_pending
 
 
-# --- the fence: deterministic hard rules (never the LLM's call) ------------
+# --- timezone helpers --------------------------------------------------------
 
-def _local(user: User, now: datetime) -> datetime:
+def _tz(user: User) -> ZoneInfo:
     try:
-        tz = ZoneInfo(user.timezone or "UTC")
+        return ZoneInfo(user.timezone or "UTC")
     except Exception:
-        tz = ZoneInfo("UTC")
-    return now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
+        return ZoneInfo("UTC")
 
 
-def within_quiet_hours(user: User, now: datetime) -> bool:
-    h = _local(user, now).hour
-    s, e = user.quiet_hours_start, user.quiet_hours_end
-    return (h >= s or h < e) if s > e else (s <= h < e)
+def _nudge_times(db: Session, user_id: int) -> list[NudgeTime]:
+    return list(db.execute(
+        select(NudgeTime).where(NudgeTime.user_id == user_id)
+    ).scalars())
 
 
-def nudges_allowed_now(db: Session, user: User, now: datetime) -> bool:
-    """Painted week-grid windows rule when they exist; otherwise fall back
-    to the legacy quiet-hours pair. All in the user's timezone."""
-    windows = db.execute(
-        select(NudgeWindow).where(NudgeWindow.user_id == user.id)
-    ).scalars().all()
-    if not windows:
-        return not within_quiet_hours(user, now)
-    local = _local(user, now)
-    return any(
-        w.weekday == local.weekday() and w.start_hour <= local.hour < w.end_hour
-        for w in windows
-    )
+def next_nudge_at(db: Session, user: User, after: datetime) -> datetime | None:
+    """The soonest nudge strictly AFTER `after`, as a naive-UTC datetime.
 
+    Walks the user's chosen clock-times in their own timezone over the coming
+    week and returns the earliest future match (handling DST via astimezone).
+    Returns None when the user has set no nudge times - i.e. nudges are off.
+    This is the single source of truth for 'when is the next ping?', so the
+    home screen and the scheduler can never disagree."""
+    times = _nudge_times(db, user.id)
+    if not times:
+        return None
+    tz = _tz(user)
+    local_after = after.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
+    best: datetime | None = None
+    for offset in range(0, 8):  # today .. +7 days covers every weekday
+        day = local_after + timedelta(days=offset)
+        for t in times:
+            if t.weekday != day.weekday():
+                continue
+            cand = day.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
+            if cand <= local_after:
+                continue
+            cand_utc = cand.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+            if best is None or cand_utc < best:
+                best = cand_utc
+    return best
+
+
+# --- the fence: deterministic hard rules (never the LLM's call) ------------
 
 def nudges_today(db: Session, user_id: int, now: datetime) -> int:
     # Counts by INTENT (queued time), so failed/pending deliveries still
@@ -64,38 +83,30 @@ def nudges_today(db: Session, user_id: int, now: datetime) -> int:
 
 
 def fence_blocks(db: Session, user: User, now: datetime) -> bool:
-    if not nudges_allowed_now(db, user, now):
-        return True
+    """A scheduled time arrived - may we actually nudge? The time itself is the
+    schedule; these are the only safety rails left."""
     if nudges_today(db, user.id, now) >= user.max_prompts_per_day:
         return True
     # don't stack on an unanswered prompt
     return agent.open_attempt(db, user.id) is not None
 
 
-# --- decide intensity: exam proximity tightens the cadence ------------------
-
-def next_gap_hours(enrollments: list[Enrollment], now: datetime) -> float:
-    gap = max(config.MIN_GAP_HOURS, 24)
-    for enr in enrollments:
-        if enr.exam_date:
-            days = (enr.exam_date - now).days
-            if days <= 7:
-                gap = min(gap, max(config.MIN_GAP_HOURS, 4))
-            elif days <= 30:
-                gap = min(gap, max(config.MIN_GAP_HOURS, 12))
-    return gap
-
-
 # --- one decision for one user -----------------------------------------------
 
+# When there's nothing to schedule (no times, or no enrollment), park the user
+# this far out instead of re-evaluating every tick.
+_PARK = timedelta(hours=6)
+
+
 def decide_for(db: Session, user: User, now: datetime) -> None:
-    if fence_blocks(db, user, now):
-        user.next_decision_at = now + timedelta(hours=1)
+    nxt = next_nudge_at(db, user, now)
+    if nxt is None:
+        user.next_decision_at = now + _PARK  # no times set -> never auto-nudge
         return
 
     enrollments = agent.active_enrollments(db, user.id)
-    if not enrollments:
-        user.next_decision_at = now + timedelta(hours=6)
+    if not enrollments or fence_blocks(db, user, now):
+        user.next_decision_at = nxt  # honour the schedule, skip this slot
         return
 
     attempt = agent.ask_question(db, user, enrollments, source="scheduled")
@@ -107,7 +118,7 @@ def decide_for(db: Session, user: User, now: datetime) -> None:
         # so a slow push provider can never stall the decision loop.
         queue_notification(db, user.id, devices, attempt.question)
 
-    user.next_decision_at = now + timedelta(hours=next_gap_hours(enrollments, now))
+    user.next_decision_at = nxt
 
 
 # --- the ticker -----------------------------------------------------------------

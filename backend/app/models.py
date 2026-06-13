@@ -150,10 +150,25 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
 
 
+class NudgeTime(Base):
+    """When the tutor nudges: exact clock times the user picked, in their own
+    timezone (e.g. 11:00, 13:00, 17:00 on chosen weekdays). The scheduler fires
+    at each. No times defined = no scheduled nudges. This is the current model;
+    NudgeWindow below is the retired 'allowed windows' shape, kept only so its
+    table/migration history stays valid."""
+    __tablename__ = "nudge_times"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    weekday: Mapped[int] = mapped_column(Integer)            # 0=Monday .. 6=Sunday
+    hour: Mapped[int] = mapped_column(Integer)               # 0-23
+    minute: Mapped[int] = mapped_column(Integer, default=0)  # 0-59
+
+
 class NudgeWindow(Base):
-    """When the tutor MAY nudge: per-weekday hour windows in the user's
-    timezone (painted on the week grid in the app). No windows defined =
-    fall back to the legacy quiet-hours pair on the user row."""
+    """RETIRED (see NudgeTime). Per-weekday allowed hour windows. Class kept so
+    the nudge_windows table mapping and its migration remain valid; no code
+    path uses it anymore."""
     __tablename__ = "nudge_windows"
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(

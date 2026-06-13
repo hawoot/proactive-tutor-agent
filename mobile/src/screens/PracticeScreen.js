@@ -27,6 +27,7 @@ const FOLLOWUP_REPLIES = [
 
 export default function PracticeScreen({ route, navigation }) {
   const effort = route.params?.effort || null;
+  const attemptId = route.params?.attemptId || null;  // set = reopen a past conversation
   const [phase, setPhase] = useState('loading'); // loading | chat | error
   const [attempt, setAttempt] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -43,16 +44,28 @@ export default function PracticeScreen({ route, navigation }) {
     setClosed(r.closed);
   };
 
-  const start = useCallback(async () => {
+  // A fresh question: the open one if any, otherwise a new one of this effort.
+  const loadFresh = useCallback(async (eff) => {
     setPhase('loading'); setErr(''); setGoal(null); setDraft('');
     try {
       const { userId } = await getConfig();
       let a = await api.openQuestion(userId);
-      if (!a) a = await api.newQuestion(userId, effort ? { effort } : {});
+      if (!a) a = await api.newQuestion(userId, eff ? { effort: eff } : {});
       applyResponse(await api.chatMessages(userId, a.id));
       setPhase('chat');
     } catch (e) { setErr(e.message); setPhase('error'); }
-  }, [effort]);
+  }, []);
+
+  // Entry point: reopen a specific past conversation, or start a fresh one.
+  const start = useCallback(async () => {
+    if (!attemptId) return loadFresh(effort);
+    setPhase('loading'); setErr(''); setGoal(null); setDraft('');
+    try {
+      const { userId } = await getConfig();
+      applyResponse(await api.chatMessages(userId, attemptId));
+      setPhase('chat');
+    } catch (e) { setErr(e.message); setPhase('error'); }
+  }, [attemptId, effort, loadFresh]);
 
   useEffect(() => { start(); }, [start]);
 
@@ -80,12 +93,14 @@ export default function PracticeScreen({ route, navigation }) {
     setThinking(false);
   };
 
+  // Skip = dismiss this question and go straight to the next one, in place -
+  // no bouncing out to the home screen and back.
   const skip = async () => {
     try {
       const { userId } = await getConfig();
       await api.skip(userId);
-      navigation.goBack();
     } catch (e) { setErr(e.message); }
+    loadFresh(effort);
   };
 
   const comingSoon = () => Alert.alert(
@@ -154,7 +169,7 @@ export default function PracticeScreen({ route, navigation }) {
 
         {closed ? (
           <>
-            <Btn label="Another question" onPress={start} />
+            <Btn label="Another question" onPress={() => loadFresh(effort)} />
             <Btn label="Done for now" kind="outline" onPress={() => navigation.goBack()} />
           </>
         ) : null}
@@ -169,7 +184,7 @@ export default function PracticeScreen({ route, navigation }) {
           ))}
           {!closed && (
             <TouchableOpacity style={s.quickChip} onPress={skip}>
-              <Text style={s.quickText}>⏭️ Skip</Text>
+              <Text style={s.quickText}>⏭️ Skip → next</Text>
             </TouchableOpacity>
           )}
         </View>

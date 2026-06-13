@@ -45,20 +45,20 @@ class UserOut(ORM):
     next_decision_at: datetime | None
 
 
-class NudgeWindowIn(BaseModel):
+class NudgeTimeIn(BaseModel):
     weekday: int = Field(ge=0, le=6)      # 0=Monday .. 6=Sunday
-    start_hour: int = Field(ge=0, le=23)
-    end_hour: int = Field(ge=1, le=24)
+    hour: int = Field(ge=0, le=23)
+    minute: int = Field(default=0, ge=0, le=59)
 
 
 class ScheduleIn(BaseModel):
-    windows: list[NudgeWindowIn]
+    times: list[NudgeTimeIn]
 
 
-class NudgeWindowOut(ORM):
+class NudgeTimeOut(ORM):
     weekday: int
-    start_hour: int
-    end_hour: int
+    hour: int
+    minute: int
 
 
 # --- devices -----------------------------------------------------------------
