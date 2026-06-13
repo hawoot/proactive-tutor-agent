@@ -5,10 +5,13 @@ import React, { useCallback, useState } from 'react';
 import { Text, ScrollView, StyleSheet, View, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, getConfig, saveConfig } from '../api';
-import { registerForPush } from '../push';
+import { ensurePermission, syncReminders, fireTestReminder, nextReminderAt, scheduledCount } from '../notifs';
 import { Btn, Card, Field, ErrorText, SectionTitle } from '../components';
 import { NudgeTimes, GoalSlider, TimezonePicker } from '../widgets';
 import { colors, pad, radius, type } from '../theme';
+
+const fmtNext = (d) =>
+  d ? d.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '';
 
 // Sensible starting point: a morning and an early-evening ping, every day.
 const DEFAULT_TIMES = [0, 1, 2, 3, 4, 5, 6].flatMap((d) => [
@@ -25,6 +28,8 @@ export default function SettingsScreen() {
   const [times, setTimes] = useState(null);
   const [tzPickerOpen, setTzPickerOpen] = useState(false);
   const [prefsMsg, setPrefsMsg] = useState('');
+  const [remMsg, setRemMsg] = useState('');
+  const [remCount, setRemCount] = useState(null);
   const [err, setErr] = useState('');
 
   const loadPrefs = useCallback(async () => {
@@ -46,6 +51,7 @@ export default function SettingsScreen() {
       const c = await getConfig();
       setUrl(c.url); setApiKey(c.apiKey); setUserId(String(c.userId));
       loadPrefs();
+      setRemCount(await scheduledCount());
     })();
   }, [loadPrefs]));
 
@@ -67,6 +73,26 @@ export default function SettingsScreen() {
 
   const savePrefs = async () => {
     setErr(''); setPrefsMsg('');
+    const list = times || [];
+
+    // 1) The reminders themselves - purely on your phone, the part that must
+    //    never fail. Done first so it works even if the server is down.
+    let reminderMsg;
+    try {
+      const granted = await ensurePermission();
+      if (!granted) {
+        reminderMsg = '⚠️ Notifications are blocked. Enable them for this app in your phone settings, then save again.';
+      } else {
+        const count = await syncReminders(list);
+        setRemCount(count);
+        const next = nextReminderAt(list);
+        reminderMsg = `🔔 ${count} reminder${count === 1 ? '' : 's'} set on this phone${next ? `, next ${fmtNext(next)}` : ''}.`;
+      }
+    } catch (e) { reminderMsg = `⚠️ Could not set reminders: ${e.message}`; }
+
+    // 2) Best-effort sync to your account (for persistence across reinstalls).
+    //    If this fails, reminders still work - they don't depend on it.
+    let serverMsg = '';
     try {
       const { userId: uid } = await getConfig();
       await Promise.all([
@@ -76,10 +102,12 @@ export default function SettingsScreen() {
           max_prompts_per_day: prefs.max_prompts_per_day,
           daily_goal: Math.max(1, parseInt(prefs.daily_goal, 10) || 3),
         }),
-        api.putSchedule(uid, times || []),
+        api.putSchedule(uid, list),
       ]);
-      setPrefsMsg('✅ Saved');
-    } catch (e) { setErr(e.message); }
+      serverMsg = ' Saved to your account.';
+    } catch { serverMsg = ' (Not synced to the server, but the reminders above still work.)'; }
+
+    setPrefsMsg(reminderMsg + serverMsg);
   };
 
   const setPref = (k) => (v) => setPrefs((p) => ({ ...p, [k]: v }));
@@ -99,10 +127,22 @@ export default function SettingsScreen() {
         {connMsg ? <Text style={s.msg}>{connMsg}</Text> : null}
       </Card>
 
-      <SectionTitle>Notifications</SectionTitle>
+      <SectionTitle>Reminders</SectionTitle>
       <Card>
-        <Btn label="🔔 Enable push notifications" kind="outline"
-          onPress={async () => setConnMsg((await registerForPush()).msg)} />
+        <Text style={[type.meta, { marginBottom: 10 }]}>
+          Your phone fires these from the times below — they work offline and
+          even when the app is closed. No server needed.
+          {remCount != null ? `  Currently scheduled: ${remCount}.` : ''}
+        </Text>
+        <Btn label="🔔 Send a test reminder (10s)" kind="outline"
+          onPress={async () => {
+            setRemMsg('');
+            const granted = await ensurePermission();
+            if (!granted) { setRemMsg('⚠️ Notifications are blocked — enable them in your phone settings.'); return; }
+            await fireTestReminder();
+            setRemMsg('✅ Test scheduled — lock your phone; it should arrive in ~10 seconds.');
+          }} />
+        {remMsg ? <Text style={s.msg}>{remMsg}</Text> : null}
       </Card>
 
       {prefs && times && (

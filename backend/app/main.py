@@ -3,8 +3,8 @@ The HTTP API. Every transport (mobile app, curl, future web) hits these
 endpoints - the backend is channel-blind.
 
 Dev run:   uvicorn app.main:app --reload
-Prod run:  see backend/HOWTO.md (migrations run automatically on startup;
-           the scheduler runs embedded unless SCHEDULER_MODE=off).
+Prod run:  see backend/HOWTO.md (migrations run automatically on startup).
+           Reminders are scheduled on the device - there is no server scheduler.
 """
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -16,16 +16,13 @@ from .db import get_db, run_migrations
 from .security import require_api_key
 from .routers import users, devices, library, notes, enrollments, practice, progress, today
 from . import seed as seed_module
-from . import scheduler
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Notifications fire on the device now - no server scheduler thread.
     run_migrations()
-    stop = scheduler.start_embedded() if config.SCHEDULER_MODE == "embedded" else None
     yield
-    if stop:
-        stop.set()
 
 
 app = FastAPI(
@@ -47,7 +44,7 @@ def health():
     return {
         "ok": True,
         "ts": datetime.utcnow().isoformat(),
-        "scheduler": config.SCHEDULER_MODE,
+        "reminders": "device-side",
         "auth": bool(config.API_KEY),
     }
 

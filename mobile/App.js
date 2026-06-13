@@ -3,10 +3,12 @@
 import React, { useEffect, useState } from 'react';
 import { Text, View, ActivityIndicator, ScrollView, Appearance } from 'react-native';
 import * as Updates from 'expo-updates';
-import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import * as Notifications from 'expo-notifications';
 import { getConfig } from './src/api';
+import { rehydrateReminders } from './src/notifs';
 import { colors, scheme } from './src/theme';
 import TodayScreen from './src/screens/TodayScreen';
 import PracticeScreen from './src/screens/PracticeScreen';
@@ -44,6 +46,7 @@ class ErrorBoundary extends React.Component {
 const Tab = createBottomTabNavigator();
 const RootStack = createNativeStackNavigator();
 const CoursesStack = createNativeStackNavigator();
+const navigationRef = createNavigationContainerRef();
 
 const headerStyle = {
   headerStyle: { backgroundColor: colors.bg },
@@ -103,6 +106,19 @@ export default function App() {
     })();
   }, []);
 
+  // Re-apply the phone's scheduled reminders on launch (self-heals if the OS
+  // cleared them after an update), and open a question when one is tapped.
+  useEffect(() => {
+    rehydrateReminders();
+    const sub = Notifications.addNotificationResponseReceivedListener((resp) => {
+      const data = resp.notification.request.content.data || {};
+      if (data.practice && navigationRef.isReady()) {
+        navigationRef.navigate('Practice', {});
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   // The palette is baked into StyleSheets at bundle load (see theme.js), so a
   // mid-session system theme flip needs a JS reload to take effect.
   useEffect(() => {
@@ -123,7 +139,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <NavigationContainer theme={navTheme}>
+      <NavigationContainer ref={navigationRef} theme={navTheme}>
         <RootStack.Navigator initialRouteName={initialRoute} screenOptions={headerStyle}>
           <RootStack.Screen name="Onboarding" component={OnboardingScreen} options={{ headerShown: false }} />
           <RootStack.Screen name="Main" component={MainTabs} options={{ headerShown: false }} />

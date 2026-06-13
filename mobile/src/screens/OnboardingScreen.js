@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { api, getConfig, saveConfig } from '../api';
-import { registerForPush } from '../push';
+import { ensurePermission } from '../notifs';
 import { Btn, Card, Field, ErrorText, Chip, Mascot } from '../components';
 import { colors, pad, type } from '../theme';
 import { BRAND } from '../brand';
@@ -114,12 +114,12 @@ export default function OnboardingScreen({ navigation }) {
           <Mascot pose="coach" size={130} />
           <Text style={s.h1}>Let Nejma reach you</Text>
           <Text style={s.sub}>
-            The proactive part: she nudges you with one question at the right time -
-            never during your quiet hours, never more than a few a day.
+            The proactive part: your phone reminds you to practise at the times
+            you choose in Settings. Allow notifications so they can come through.
           </Text>
           <View style={{ alignSelf: 'stretch', marginTop: 24 }}>
             <Btn label="Enable notifications" onPress={async () => {
-              await registerForPush();
+              await ensurePermission();
               finish();
             }} />
             <Btn label="Maybe later" kind="ghost" onPress={finish} />
