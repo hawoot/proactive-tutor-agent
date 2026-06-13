@@ -54,8 +54,20 @@ const dark = {
 export const scheme = Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
 export const colors = scheme === 'dark' ? dark : light;
 
-export const radius = { sm: 10, md: 14, lg: 18, pill: 999 };
+export const radius = { sm: 10, md: 14, lg: 20, xl: 26, pill: 999 };
 export const pad = 16;
+
+// Soft shadows make surfaces feel like floating cards (an app), not boxes with
+// hard borders (a 90s web form). Dark mode leans on elevation; light mode on a
+// warm, low-opacity drop shadow.
+export const shadow = {
+  sm: scheme === 'dark'
+    ? { elevation: 3, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } }
+    : { elevation: 2, shadowColor: '#5b4a2e', shadowOpacity: 0.10, shadowRadius: 9, shadowOffset: { width: 0, height: 3 } },
+  md: scheme === 'dark'
+    ? { elevation: 7, shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } }
+    : { elevation: 6, shadowColor: '#5b4a2e', shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+};
 
 export const type = {
   hero: { fontSize: 26, fontWeight: '800', color: colors.ink },

@@ -74,7 +74,11 @@ function MainTabs() {
         tabBarActiveTintColor: colors.primaryDark,
         tabBarInactiveTintColor: colors.inkFaint,
         tabBarLabelStyle: { fontWeight: '700', fontSize: 11 },
-        tabBarStyle: { backgroundColor: colors.bg, borderTopColor: colors.line, height: 60, paddingBottom: 6 },
+        tabBarStyle: {
+          backgroundColor: colors.card, borderTopWidth: 0, height: 62, paddingBottom: 8, paddingTop: 6,
+          shadowColor: '#000', shadowOpacity: scheme === 'dark' ? 0.4 : 0.08,
+          shadowRadius: 12, shadowOffset: { width: 0, height: -3 }, elevation: 12,
+        },
         tabBarIcon: ({ focused }) => (
           <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.45 }}>{TAB_ICONS[route.name]}</Text>
         ),

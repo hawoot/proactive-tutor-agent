@@ -22,8 +22,9 @@ def _build() -> LLMProvider:
 _provider: LLMProvider | None = None
 
 
-def ask(prompt: str, max_tokens: int = 500) -> str:
+def ask(prompt: str, max_tokens: int = 500,
+        images: list[str] | None = None) -> str:
     global _provider
     if _provider is None:
         _provider = _build()
-    return _provider.ask(prompt, max_tokens)
+    return _provider.ask(prompt, max_tokens, images=images)

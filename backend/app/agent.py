@@ -285,12 +285,18 @@ CHAT_HISTORY_TURNS = 12
 
 
 def chat_turn(db: Session, user: User, attempt: Attempt, text: str,
-              modality: str = "text") -> bool:
+              modality: str = "text", images: list[str] | None = None) -> bool:
     """One student message in the mini-conversation about the open question.
     The LLM decides: a final answer gets MARKED (closes the attempt, updates
     mastery); anything else gets COACHED - Socratic, no answer-dumping unless
-    the student explicitly asks to see the solution. Returns True if closed."""
+    the student explicitly asks to see the solution. Returns True if closed.
+
+    `images` (base64 photos of handwritten work) are sent to the vision model
+    and the turn is treated as a submitted answer."""
     ensure_question_message(db, attempt)
+    if images:
+        modality = "photo"
+        text = text.strip() or "(here is a photo of my working)"
     attempt.messages.append(AttemptMessage(
         role="student", kind="chat", content=text, modality=modality))
     db.flush()
@@ -316,11 +322,13 @@ def chat_turn(db: Session, user: User, attempt: Attempt, text: str,
     spoken = ("\nNote: the student's message was SPOKEN and auto-transcribed - "
               "tolerate homophones, missing symbols and notation artifacts; "
               "interpret charitably.") if modality == "voice" else ""
+    photo = ("\nNote: the student attached a PHOTO of their handwritten working - "
+             "read it carefully and mark it as their final answer.") if images else ""
 
     out = llm.ask(f"""You are a friendly expert tutor in a short conversation about ONE practice question.
 Question: {attempt.question}
 {trusted}Conversation so far:
-{history}{spoken}
+{history}{spoken}{photo}
 
 Decide what the student's latest message is:
 - A FINAL ANSWER to the question -> mark it against the rubric: {rubric}
@@ -334,7 +342,7 @@ MODE: COACH
 --- or ---
 MODE: MARK
 VERDICT: correct | partial | wrong
-FEEDBACK: <=3 sentences""", max_tokens=500)
+FEEDBACK: <=3 sentences""", max_tokens=500, images=images)
 
     mode = "MARK" if ("MODE: MARK" in out or (
         "MODE:" not in out and "VERDICT" in out)) else "COACH"

@@ -7,9 +7,17 @@ class AnthropicProvider(LLMProvider):
         self.client = Anthropic(api_key=api_key)
         self.model = model
 
-    def ask(self, prompt: str, max_tokens: int = 500) -> str:
+    def ask(self, prompt: str, max_tokens: int = 500,
+            images: list[str] | None = None) -> str:
+        # Images first, then the text - Claude reads the photo, then the task.
+        content = [
+            {"type": "image",
+             "source": {"type": "base64", "media_type": "image/jpeg", "data": img}}
+            for img in (images or [])
+        ]
+        content.append({"type": "text", "text": prompt})
         msg = self.client.messages.create(
             model=self.model, max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": content}],
         )
         return msg.content[0].text.strip()

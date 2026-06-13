@@ -266,9 +266,10 @@ class MessageOut(ORM):
 
 class ChatRequest(BaseModel):
     user_id: int
-    text: str
+    text: str = ""
     attempt_id: int | None = None              # default: the open attempt
-    modality: Literal["text", "voice"] = "text"  # voice = transcribed speech
+    modality: Literal["text", "voice", "photo"] = "text"  # voice = transcribed speech
+    images: list[str] | None = None            # base64 JPEG(s): a photo of the work
 
 
 class ChatResponse(BaseModel):

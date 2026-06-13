@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tnejjem",
     "slug": "proactive-tutor",
-    "version": "3.1.0",
+    "version": "3.2.0",
     "newArchEnabled": false,
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
@@ -32,7 +32,22 @@
       "expo-notifications",
       "expo-asset",
       "expo-audio",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos so you can attach a picture of your work.",
+          "cameraPermission": "Allow $(PRODUCT_NAME) to use the camera to photograph your handwritten work."
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow $(PRODUCT_NAME) to use the microphone to hear your spoken answers.",
+          "speechRecognitionPermission": "Allow $(PRODUCT_NAME) to transcribe your speech into text.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+        }
+      ]
     ],
     "extra": {
       "eas": {
