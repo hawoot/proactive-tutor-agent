@@ -5,7 +5,7 @@ import React, { useCallback, useState } from 'react';
 import { Text, ScrollView, StyleSheet, View, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, getConfig, saveConfig } from '../api';
-import { ensurePermission, syncReminders, fireTestReminder, nextReminderAt, scheduledCount } from '../notifs';
+import { ensurePermission, syncReminders, nextReminderAt, scheduledCount } from '../notifs';
 import { Btn, Card, Field, ErrorText, SectionTitle } from '../components';
 import { NudgeTimes, GoalSlider, TimezonePicker } from '../widgets';
 import { colors, pad, radius, type } from '../theme';
@@ -28,7 +28,6 @@ export default function SettingsScreen() {
   const [times, setTimes] = useState(null);
   const [tzPickerOpen, setTzPickerOpen] = useState(false);
   const [prefsMsg, setPrefsMsg] = useState('');
-  const [remMsg, setRemMsg] = useState('');
   const [remCount, setRemCount] = useState(null);
   const [err, setErr] = useState('');
 
@@ -129,20 +128,10 @@ export default function SettingsScreen() {
 
       <SectionTitle>Reminders</SectionTitle>
       <Card>
-        <Text style={[type.meta, { marginBottom: 10 }]}>
-          Your phone fires these from the times below — they work offline and
-          even when the app is closed. No server needed.
-          {remCount != null ? `  Currently scheduled: ${remCount}.` : ''}
+        <Text style={type.meta}>
+          Your phone fires reminders from the times below — offline, and even when
+          the app is closed.{remCount != null ? `  ${remCount} scheduled right now.` : ''}
         </Text>
-        <Btn label="🔔 Send a test reminder (10s)" kind="outline"
-          onPress={async () => {
-            setRemMsg('');
-            const granted = await ensurePermission();
-            if (!granted) { setRemMsg('⚠️ Notifications are blocked — enable them in your phone settings.'); return; }
-            await fireTestReminder();
-            setRemMsg('✅ Test scheduled — lock your phone; it should arrive in ~10 seconds.');
-          }} />
-        {remMsg ? <Text style={s.msg}>{remMsg}</Text> : null}
       </Card>
 
       {prefs && times && (

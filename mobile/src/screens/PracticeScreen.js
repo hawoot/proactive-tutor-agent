@@ -160,13 +160,25 @@ export default function PracticeScreen({ route, navigation }) {
     ]);
   };
 
-  // Skip = dismiss this question and go straight to the next one, in place.
-  const skip = async () => {
-    try {
-      const { userId } = await getConfig();
-      await api.skip(userId);
-    } catch (e) { setErr(e.message); }
-    loadFresh(effort);
+  // Skip / next: always let you choose the KIND of the next question.
+  // `afterSkip` dismisses the current question first (mastery untouched).
+  const chooseNext = (afterSkip) => {
+    Alert.alert(
+      afterSkip ? 'Skip — what next?' : 'Another question',
+      'Pick the kind you want next.',
+      [
+        { text: '⚡ Quick one', onPress: () => goNext('quick', afterSkip) },
+        { text: '🧠 Deep dive', onPress: () => goNext('deep', afterSkip) },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  };
+  const goNext = async (kind, afterSkip) => {
+    if (afterSkip) {
+      try { const { userId } = await getConfig(); await api.skip(userId); }
+      catch (e) { setErr(e.message); }
+    }
+    loadFresh(kind);
   };
 
   if (phase === 'loading') {
@@ -229,7 +241,7 @@ export default function PracticeScreen({ route, navigation }) {
 
         {closed ? (
           <>
-            <Btn label="Another question" onPress={() => loadFresh(effort)} />
+            <Btn label="Another question" onPress={() => chooseNext(false)} />
             <Btn label="Done for now" kind="outline" onPress={() => navigation.goBack()} />
           </>
         ) : null}
@@ -243,8 +255,8 @@ export default function PracticeScreen({ route, navigation }) {
             </TouchableOpacity>
           ))}
           {!closed && (
-            <TouchableOpacity style={s.quickChip} onPress={skip}>
-              <Text style={s.quickText}>⏭️ Skip → next</Text>
+            <TouchableOpacity style={s.quickChip} onPress={() => chooseNext(true)}>
+              <Text style={s.quickText}>⏭️ Skip → choose next</Text>
             </TouchableOpacity>
           )}
         </View>

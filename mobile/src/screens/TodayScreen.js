@@ -1,7 +1,7 @@
 // Home = the agent's plan, made visible. Streak + daily goal up top, ONE
 // hero action, then the timeline: what's coming, what just happened.
 import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, RefreshControl, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, getConfig } from '../api';
 import { Btn, Card, Chip, Bar, ErrorText, EmptyState, SectionTitle, Mascot } from '../components';
@@ -26,6 +26,20 @@ export default function TodayScreen({ navigation }) {
   const refresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
   const practice = (effort) => navigation.navigate('Practice', { effort });
+
+  // Dismiss the waiting question (mastery untouched) then either start a new
+  // one of the chosen kind, or just clear it and stay here.
+  const skipOpenThen = (effort, go) => async () => {
+    try { const { userId } = await getConfig(); await api.skip(userId); } catch {}
+    if (go) navigation.navigate('Practice', { effort }); else load();
+  };
+  const dismissOpen = () => {
+    Alert.alert('Skip this question?', 'Remove it — what would you like instead?', [
+      { text: '⚡ Quick one', onPress: skipOpenThen('quick', true) },
+      { text: '🧠 Deep dive', onPress: skipOpenThen('deep', true) },
+      { text: 'Just remove it', onPress: skipOpenThen(null, false) },
+    ]);
+  };
 
   const goalDone = data && data.answered_today >= data.daily_goal;
 
@@ -75,6 +89,7 @@ export default function TodayScreen({ navigation }) {
               <Text style={s.heroTitle}>A question is waiting</Text>
               <Text style={type.body} numberOfLines={3}>{data.open_attempt.question}</Text>
               <Btn label="Answer now" onPress={() => practice(null)} />
+              <Btn label="Skip this one" kind="outline" onPress={dismissOpen} />
             </Card>
           ) : data.due_now > 0 ? (
             <Card tint={colors.orange}>
