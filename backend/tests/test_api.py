@@ -141,20 +141,24 @@ def test_everything():
         assert c.patch("/users/1", json={"timezone": "Europe/London"},
                        headers=H).json()["timezone"] == "Europe/London"
 
-        # scheduler tick: queues via the outbox, dispatcher delivers, reschedules
-        from sqlalchemy import select
+        # next reminder: server only COMPUTES the next fire time (the device
+        # schedules and fires the actual notifications). With an all-day
+        # schedule set above, the next reminder must be in the future.
+        from datetime import datetime
         from app import scheduler
         from app.db import SessionLocal
-        from app.models import User, NotificationLog
+        from app.models import User
         with SessionLocal() as db:
-            for usr in db.execute(select(User)).scalars():
-                usr.next_decision_at = None  # mark due; user 1 has nudge times
+            u = db.get(User, 1)
+            nxt = scheduler.next_nudge_at(db, u, datetime.utcnow())
+            assert nxt is not None and nxt > datetime.utcnow()
+            # a user with no times set gets no reminder
+            from app.models import NudgeTime
+            from sqlalchemy import delete as sa_delete
+            db.execute(sa_delete(NudgeTime).where(NudgeTime.user_id == 2))
             db.commit()
-        scheduler.tick()
-        with SessionLocal() as db:
-            logs = db.execute(select(NotificationLog)).scalars().all()
-            assert logs and all(n.status == "sent" and n.delivered_at for n in logs)
-            assert all(u.next_decision_at for u in db.execute(select(User)).scalars())
+            u2 = db.get(User, 2)
+            assert u2 is None or scheduler.next_nudge_at(db, u2, datetime.utcnow()) is None
 
         # repeat cooldown: a just-seen, not-yet-due skill is excluded for the
         # scheduler but still served on demand

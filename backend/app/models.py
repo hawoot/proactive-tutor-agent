@@ -313,12 +313,9 @@ class Note(Base):
 
 
 class NotificationLog(Base):
-    """The notification OUTBOX + audit log. Deciding to nudge INSERTs a
-    'queued' row (fast, transactional); a dispatcher drains queued rows and
-    delivers them. Today the dispatcher is an in-process SQL poller
-    (notifier.dispatch_pending); at scale, swap it for Redis/SQS workers
-    behind the same function - nothing upstream changes. Also powers the
-    daily cap, the history screen, and 'why didn't it ping me?'."""
+    """DORMANT. Was the server-push outbox; reminders now fire on the device,
+    so nothing writes here anymore. Table kept (no destructive migration) in
+    case a server-side delivery channel (e.g. email digests) is added later."""
     __tablename__ = "notification_log"
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(

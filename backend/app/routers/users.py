@@ -3,11 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, delete as sa_delete
 from sqlalchemy.orm import Session
 from ..db import get_db
-from ..models import utcnow, User, NudgeTime
+from ..models import User, NudgeTime
 from ..schemas import (
     UserCreate, UserUpdate, UserOut, ScheduleIn, NudgeTimeOut,
 )
-from ..scheduler import next_nudge_at
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -44,9 +43,6 @@ def update_user(user_id: int, body: UserUpdate, db: Session = Depends(get_db)):
     user = get_user_or_404(db, user_id)
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(user, field, value)
-    # Timezone changes shift every clock-time nudge - re-aim the next one.
-    if "timezone" in body.model_dump(exclude_unset=True):
-        user.next_decision_at = next_nudge_at(db, user, utcnow())
     db.commit()
     return user
 
@@ -63,15 +59,12 @@ def get_schedule(user_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{user_id}/schedule", response_model=list[NudgeTimeOut])
 def put_schedule(user_id: int, body: ScheduleIn, db: Session = Depends(get_db)):
-    """Replace the whole set of nudge times in one call. Empty list = no
-    scheduled nudges. Re-aims next_decision_at so the change takes effect (and
-    shows up on the home screen) immediately - no waiting for the old slot."""
-    user = get_user_or_404(db, user_id)
+    """Replace the whole set of nudge times in one call (stored for persistence;
+    the device schedules the actual notifications). Empty list = no reminders."""
+    get_user_or_404(db, user_id)
     db.execute(sa_delete(NudgeTime).where(NudgeTime.user_id == user_id))
     for t in body.times:
         db.add(NudgeTime(user_id=user_id, **t.model_dump()))
-    db.flush()
-    user.next_decision_at = next_nudge_at(db, user, utcnow())
     db.commit()
     return db.execute(
         select(NudgeTime).where(NudgeTime.user_id == user_id)
