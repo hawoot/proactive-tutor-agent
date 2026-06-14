@@ -232,3 +232,38 @@ Why this is strong:
 **Implication:** a rename touches the app name, icon, and splash, which are baked into
 the native binary → this requires a **full EAS rebuild** (not an OTA update), per the
 project handoff. Worth doing once, alongside the redesign, not piecemeal.
+
+### 7c. Flow redesign — "solve first, decide less"
+Owner's diagnosis (the key one): *"most of your mental energy is used before you even
+start solving."* The app front-loads decisions. **Governing principle: spend energy
+solving, not deciding — the agent makes the calls, the student just answers.**
+
+Current loop (from `App.js` / `TodayScreen.js` / `PracticeScreen.js`) and its friction:
+- Practice is a **modal** you drop into and bounce out of — the core activity has no home.
+- **Quick vs Deep is asked repeatedly** — on Today, on every skip, on every "next" — and
+  those are the off-theme `Alert.alert` pop-ups (see §7a). Decision tax + ugly UI.
+- New users take **5+ taps** to reach the first coached question (onboard → Today →
+  "pick a course" → Courses → enroll → back → practice). The "aha" is buried.
+- The hero card **shifts identity** (open question / reviews due / caught up), blurring
+  "what does today want from me, and when am I done?"
+
+Proposed loop (all four frictions, owner confirmed all four bite):
+1. **One tap to solving.** The nudge and Today's single primary button drop you straight
+   into a question the agent already chose. **Onboarding ends *inside* the first coached
+   question** (enrollment happens during onboarding), so the magic moment is immediate.
+2. **Quick vs Deep — kept, friction removed.** It's a real need (a 2-min moment ≠ a
+   sit-down). Make it a **quiet, sticky toggle** the agent pre-sets from context (quick
+   nudge → Quick; study session → Deep). It lives in the session header; one tap to flip,
+   and it **stays** for subsequent questions. **Never a pop-up, never asked twice.** Skip
+   = one tap, moves on in the current mode. → removes essentially all the §7a dialogs.
+3. **A clear daily target.** One stable goal (e.g. "3 of 5") and one consistent action.
+   Reviews-due / exam-countdown move to a secondary line, not the primary button. A real
+   **"done for today"** finish line (streak ticks, gentle non-nagging "one more?").
+4. **Practice as a continuous session, not a modal.** Slim progress strip ("2 / 5") at
+   top; "next" flows in inline; exiting returns you to a Today that reflects what you just
+   did. Keep full-screen focus, lose the bounce-in/bounce-out feel.
+
+Answer modalities (type / talk / snap photo) are unchanged — that part already works.
+Visual reference: `mockups/labib-flowmap.png`. Next step is to mock the redesigned
+Practice-session screen (with the sticky toggle + progress strip) and the onboarding→first-
+question hand-off, before any code.
