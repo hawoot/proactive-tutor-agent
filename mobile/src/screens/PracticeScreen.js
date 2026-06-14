@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, getConfig } from '../api';
 import { Btn, Chip, ErrorText, EmptyState, Mascot, Sheet } from '../components';
 import { colors, pad, radius, type, shadow } from '../theme';
@@ -36,6 +37,20 @@ const FOLLOWUP_REPLIES = [
   { label: '🧪 Similar example', text: 'Can you show me a similar example worked through?' },
 ];
 
+// The mic must NOT decide when you're done. continuous mode + generous Android
+// silence windows mean a pause to gather your thoughts (this is maths) never
+// ends dictation — it stops only when you tap the mic.
+const MIC_OPTIONS = {
+  lang: 'en-US',
+  interimResults: true,
+  continuous: true,
+  androidIntentOptions: {
+    EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 15000,
+    EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 15000,
+    EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS: 30000,
+  },
+};
+
 export default function PracticeScreen({ route, navigation }) {
   const effort = route.params?.effort || null;
   const attemptId = route.params?.attemptId || null;  // set = reopen a past conversation
@@ -52,6 +67,16 @@ export default function PracticeScreen({ route, navigation }) {
   const [mode, setMode] = useState(effort === 'deep' ? 'deep' : 'quick'); // sticky
   const [photoSheet, setPhotoSheet] = useState(false);
   const scrollRef = useRef(null);
+  // voice: wantMic = the user intends to keep dictating (cleared only by a
+  // manual stop); base = text already committed so new speech appends rather
+  // than replaces; restarts caps runaway auto-restarts.
+  const wantMicRef = useRef(false);
+  const baseRef = useRef('');
+  const restartsRef = useRef(0);   // consecutive *fast* restarts (loop guard)
+  const lastEndRef = useRef(0);
+  // draft persistence across navigation, keyed by attempt.
+  const draftRef = useRef('');
+  const attemptIdRef = useRef(null);
 
   const applyResponse = (r) => {
     setAttempt(r.attempt);
@@ -98,36 +123,100 @@ export default function PracticeScreen({ route, navigation }) {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
   }, [messages, thinking]);
 
-  // --- voice: on-device dictation fills the box, you review, then send -------
-  useSpeechRecognitionEvent('result', (e) => {
-    const t = e.results?.[0]?.transcript;
-    if (t) { setDraft(t); setDictated(true); }
-  });
-  useSpeechRecognitionEvent('end', () => setListening(false));
-  useSpeechRecognitionEvent('error', (e) => {
-    setListening(false);
-    setErr(`Microphone: ${e.error || e.message || 'could not hear you'}`);
-  });
-  useEffect(() => () => { try { ExpoSpeechRecognitionModule.stop(); } catch {} }, []);
+  // Keep refs in step for the unmount save and append-on-dictate.
+  useEffect(() => { draftRef.current = draft; }, [draft]);
+  useEffect(() => { attemptIdRef.current = attempt?.id ?? null; }, [attempt?.id]);
 
+  // Restore a saved draft when a question is shown (never clobber live typing).
+  useEffect(() => {
+    const id = attempt?.id;
+    if (!id) return undefined;
+    let alive = true;
+    AsyncStorage.getItem(`draft:${id}`).then((v) => {
+      if (alive && v && !draftRef.current) setDraft(v);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [attempt?.id]);
+
+  // Persist the in-progress draft on unmount so leaving never loses your text.
+  useEffect(() => () => {
+    const id = attemptIdRef.current;
+    if (!id) return;
+    const v = draftRef.current;
+    if (v && v.trim()) AsyncStorage.setItem(`draft:${id}`, v).catch(() => {});
+    else AsyncStorage.removeItem(`draft:${id}`).catch(() => {});
+  }, []);
+
+  // --- voice: dictation fills the box; it stops ONLY when you tap the mic ----
+  useSpeechRecognitionEvent('result', (e) => {
+    const t = e.results?.[0]?.transcript ?? '';
+    if (!t) return;
+    restartsRef.current = 0; // making progress
+    const base = baseRef.current;
+    const combined = (base ? base + ' ' : '') + t;
+    setDraft(combined.trimStart());
+    setDictated(true);
+    if (e.isFinal) baseRef.current = combined.trim(); // commit this segment
+  });
+  // The engine ended (silence/timeout/segment). If you haven't tapped stop,
+  // restart — a thinking pause must never cut you off.
+  useSpeechRecognitionEvent('end', () => {
+    if (!wantMicRef.current) { setListening(false); return; }
+    // Only a *tight* restart loop (each end < 1.2s after the last) is a problem;
+    // periodic silence-restarts during a long pause have big gaps and reset it.
+    const now = Date.now();
+    restartsRef.current = now - lastEndRef.current < 1200 ? restartsRef.current + 1 : 0;
+    lastEndRef.current = now;
+    if (restartsRef.current > 8) {
+      wantMicRef.current = false; setListening(false);
+      setErr('Mic stopped — tap it to start again.');
+      return;
+    }
+    baseRef.current = draftRef.current; // keep what we have; append the next segment
+    try { ExpoSpeechRecognitionModule.start(MIC_OPTIONS); }
+    catch { wantMicRef.current = false; setListening(false); }
+  });
+  useSpeechRecognitionEvent('error', (e) => {
+    const code = e.error || '';
+    // benign "you went quiet" / restart noise: ignore, 'end' handles it. A real
+    // problem (permission, etc.): give up and surface it.
+    if (code && !['no-speech', 'speech-timeout', 'no-match', 'client', 'aborted'].includes(code)) {
+      wantMicRef.current = false;
+      setErr(`Microphone: ${e.error || e.message || 'could not hear you'}`);
+    }
+  });
+  useEffect(() => () => {
+    wantMicRef.current = false;
+    try { ExpoSpeechRecognitionModule.stop(); } catch {}
+  }, []);
+
+  const stopMic = () => {
+    wantMicRef.current = false;
+    try { ExpoSpeechRecognitionModule.stop(); } catch {}
+    setListening(false);
+  };
   const toggleMic = async () => {
     if (thinking) return;
-    if (listening) { try { ExpoSpeechRecognitionModule.stop(); } catch {} setListening(false); return; }
+    if (listening) { stopMic(); return; }
     try {
       const p = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!p.granted) { setErr('Microphone permission denied — enable it in phone settings.'); return; }
-      setErr(''); setDraft(''); setDictated(false);
-      ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: true });
+      setErr(''); setDictated(false);
+      baseRef.current = draft ? draft.trim() : '';  // append to whatever's there
+      restartsRef.current = 0;
+      wantMicRef.current = true;
+      ExpoSpeechRecognitionModule.start(MIC_OPTIONS);
       setListening(true);
-    } catch (e) { setErr(`Microphone: ${e.message}`); }
+    } catch (e) { wantMicRef.current = false; setErr(`Microphone: ${e.message}`); }
   };
 
   // --- the one send path: text, voice-dictated text, or a photo -------------
   const sendMessage = async ({ text = '', images = null, localUri = null }) => {
     const content = (text ?? '').trim();
     if ((!content && !images) || thinking) return;
-    if (listening) { try { ExpoSpeechRecognitionModule.stop(); } catch {} setListening(false); }
-    setErr(''); setDraft(''); setThinking(true);
+    if (listening || wantMicRef.current) { wantMicRef.current = false; try { ExpoSpeechRecognitionModule.stop(); } catch {} setListening(false); }
+    setErr(''); setDraft(''); baseRef.current = ''; setThinking(true);
+    const sentAttemptId = attempt?.id; if (sentAttemptId) AsyncStorage.removeItem(`draft:${sentAttemptId}`).catch(() => {});
     const modality = images ? 'photo' : (dictated ? 'voice' : 'text');
     setDictated(false);
     setMessages((m) => [...m, {
@@ -170,6 +259,7 @@ export default function PracticeScreen({ route, navigation }) {
   // next of the current mode. One tap, no prompt.
   const skipNext = async () => {
     if (thinking) return;
+    const skippedId = attempt?.id; if (skippedId) AsyncStorage.removeItem(`draft:${skippedId}`).catch(() => {});
     try { const { userId } = await getConfig(); await api.skip(userId); }
     catch (e) { setErr(e.message); }
     loadFresh(mode);
@@ -305,7 +395,7 @@ export default function PracticeScreen({ route, navigation }) {
           <TextInput
             style={s.input} value={draft} multiline
             onChangeText={(t) => { setDraft(t); setDictated(false); }}
-            placeholder={listening ? 'Listening… speak now' : (closed ? 'Any follow-up?' : 'Type, talk, or snap a photo…')}
+            placeholder={listening ? 'Listening… take your time — tap the mic when done' : (closed ? 'Any follow-up?' : 'Type, talk, or snap a photo…')}
             placeholderTextColor={colors.inkFaint}
           />
           <TouchableOpacity
