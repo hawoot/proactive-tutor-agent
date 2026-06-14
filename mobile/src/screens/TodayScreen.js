@@ -167,8 +167,8 @@ export default function TodayScreen({ navigation }) {
 function GreetingRow({ goalDone }) {
   const g = greeting(new Date().getHours());
   const pose = goalDone ? 'celebrate' : g.pose;
-  const line = goalDone ? 'Behi! Goal done ⭐' : g.line;
-  const sub = goalDone ? 'You said you couldn’t. Labib disagreed. Extra is a bonus.' : g.sub;
+  const line = goalDone ? 'Goal done ⭐' : g.line;
+  const sub = goalDone ? 'Nice work — anything more today is a bonus.' : g.sub;
   return (
     <View style={s.greetRow}>
       <Mascot pose={pose} size={72} />

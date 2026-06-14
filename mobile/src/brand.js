@@ -1,19 +1,17 @@
 // The brand lives here and ONLY here. Name, story, voice, mascot art.
 // Swapping the mascot or renaming the app should never touch a screen.
 //
-// Labib — لبيب, Arabic/Tunisian for "clever, wise, sharp-witted". He's a
-// fennec, the little desert fox of Tunisia (and the mascot a generation grew
-// up with). He shows up every day, coaches you through one question at a time,
-// and drops the occasional Tunisian word — always with enough context to learn
-// it. Master a skill and he gives you the craftsman's title: ma'allem (معلّم).
+// Labib — a fennec, the little desert fox, and your study buddy. He shows up
+// every day, coaches you through one question at a time, and guides you to the
+// answer rather than handing it over.
 
 export const BRAND = {
   appName: 'Labib',
   mascotName: 'Labib',
   tagline: 'Clever help, every day.',
-  story: '“Labib” (لبيب) means clever — wise, quick-witted. He’s a fennec, the ' +
-    'little desert fox, and he’s in your corner every day: one question at a ' +
-    'time, guiding you through it rather than just handing over the answer.',
+  story: 'Labib is a fennec — the little desert fox — and he’s in your corner ' +
+    'every day: one question at a time, guiding you through it rather than just ' +
+    'handing over the answer.',
 };
 
 // Mascot poses. Keys are the vocabulary screens use; art is interchangeable.
@@ -25,16 +23,15 @@ export const MASCOT = {
   sleep: require('../assets/mascot/sleep.png'),      // quiet hours, all caught up
 };
 
-// The earned rank for a mastered skill: the craftsman's title.
+// The earned rank for a mastered skill.
 export function masteryRank(score) {
-  return score >= 0.9 ? 'Ma’allem 🏅' : null;
+  return score >= 0.9 ? 'Mastered 🏅' : null;
 }
 
-// Time-aware greeting for the Today screen. One Tunisian word, translated
-// by context, never more.
+// Time-aware greeting for the Today screen.
 export function greeting(hour) {
   if (hour < 5) return { pose: 'sleep', line: 'Up late?', sub: 'One question, then sleep on it — that’s how it sticks.' };
-  if (hour < 12) return { pose: 'wave', line: 'Sbeh el khir! ☀️', sub: 'Good morning — your brain is freshest right now.' };
+  if (hour < 12) return { pose: 'wave', line: 'Good morning ☀️', sub: 'Your brain is freshest right now.' };
   if (hour < 18) return { pose: 'wave', line: 'Ready when you are', sub: 'A question takes two minutes. Labib remembers the rest.' };
   if (hour < 22) return { pose: 'wave', line: 'Evening review time', sub: 'What you review tonight, you keep tomorrow.' };
   return { pose: 'sleep', line: 'Winding down', sub: 'One last question? Then Labib sleeps too.' };
