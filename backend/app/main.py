@@ -61,10 +61,11 @@ def policies():
     agents) discover the switches instead of hardcoding them."""
     from . import agent
     return {
-        "selection_strategy": {
-            "options": list(agent.SELECTION_STRATEGIES),
-            "default": "due_then_weakest",
-            "description": "How the next skill is picked.",
+        "mode": {
+            "options": ["on_the_go", "short_drill", "problem"],
+            "default": "short_drill",
+            "description": "on_the_go = phone-only (traps/concepts); short_drill = a few "
+                           "steps on paper; problem = multi-step exercise.",
         },
         "marking_strictness": {
             "options": list(agent.MARKING_RUBRICS),

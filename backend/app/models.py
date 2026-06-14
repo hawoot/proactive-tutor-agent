@@ -101,8 +101,7 @@ class Skill(Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")  # extra context for question generation
-    question_type: Mapped[str] = mapped_column(String(40), default="numeric")  # numeric|symbolic|mcq|code|rubric
-    effort: Mapped[str] = mapped_column(String(10), default="quick")           # quick | deep
+    kind: Mapped[str] = mapped_column(String(20), default="concept")  # math|code|stats|concept (generation hint)
 
     program: Mapped[Program] = relationship(back_populates="skills")
     unit: Mapped[Unit | None] = relationship(back_populates="skills")
@@ -120,8 +119,10 @@ class Question(Base):
         ForeignKey("skills.id", ondelete="CASCADE"), index=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
     text: Mapped[str] = mapped_column(Text)
-    answer: Mapped[str] = mapped_column(Text, default="")      # canonical worked answer
+    answer: Mapped[str] = mapped_column(Text, default="")      # canonical worked answer (Problem: include the steps)
     commentary: Mapped[str] = mapped_column(Text, default="")  # marking guidance (what earns partial etc.)
+    mode: Mapped[str] = mapped_column(String(20), default="short_drill")  # on_the_go | short_drill | problem
+    style: Mapped[str] = mapped_column(String(24), default="")  # on-the-go flavour: trap|misconception|true_false|concept|counterexample|example|mcq
     source: Mapped[str] = mapped_column(String(20), default="curated")  # curated | generated
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -214,8 +215,6 @@ class Enrollment(Base):
     status: Mapped[str] = mapped_column(String(20), default="active")  # active | paused | completed
     exam_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # --- policy toggles (validated enums + bounded numbers) ---
-    selection_strategy: Mapped[str] = mapped_column(
-        String(40), default="due_then_weakest")  # due_then_weakest | due_then_unseen | round_robin
     repeat_cooldown_hours: Mapped[float] = mapped_column(Float, default=6.0)
     marking_strictness: Mapped[str] = mapped_column(
         String(20), default="balanced")          # strict | balanced | lenient
