@@ -43,7 +43,7 @@ def new_question(body: QuestionRequest, db: Session = Depends(get_db)):
     if not enrollments:
         raise HTTPException(400, "No active enrollment - enroll in a program first")
     attempt = agent.ask_question(db, user, enrollments, source="on_demand",
-                                 effort=body.effort)
+                                 mode=body.mode)
     if not attempt:
         raise HTTPException(400, (
             "No question available: either the program(s) have no skills yet, "

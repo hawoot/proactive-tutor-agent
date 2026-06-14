@@ -115,7 +115,7 @@ def clone_program(program_id: int, user_id: int, db: Session = Depends(get_db)):
         db.add(Skill(
             program_id=dst.id, unit_id=unit_map.get(s.unit_id) if s.unit_id else None,
             position=s.position, name=s.name, description=s.description,
-            question_type=s.question_type, effort=s.effort,
+            kind=s.kind,
         ))
     db.commit()
     return ProgramOut.model_validate(dst)
