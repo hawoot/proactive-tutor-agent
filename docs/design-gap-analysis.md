@@ -264,6 +264,20 @@ Proposed loop (all four frictions, owner confirmed all four bite):
    did. Keep full-screen focus, lose the bounce-in/bounce-out feel.
 
 Answer modalities (type / talk / snap photo) are unchanged — that part already works.
-Visual reference: `mockups/labib-flowmap.png`. Next step is to mock the redesigned
-Practice-session screen (with the sticky toggle + progress strip) and the onboarding→first-
-question hand-off, before any code.
+
+**Help buttons (in-session quick replies) — reduced from 3 to 2.** Today's set is
+Hint / I'm stuck / Show me. "I'm stuck" is a *state*, not an action (the tutor can infer
+it), and a plain "Hint" is subsumed by guided mode. Replace with the two that span the
+whole range:
+- 🧭 **Walk me through it** — scaffolded, step-by-step; the student still does the work.
+  It *opens with a hint* (the first nudge) and guides only as much as needed → this is the
+  pedagogically strongest path and the encouraged/primary button.
+- 👁 **Show me the solution** — the escape hatch: full worked answer.
+The free-text box is always present, so direct answers or any other question need no
+button. (Post-answer follow-ups — Explain more / Similar example — stay.)
+
+Visual references: `mockups/labib-flowmap.png` (flow), `mockups/labib-session.png`
+(redesigned session: sticky toggle, progress strip, two help buttons, inline verdict +
+inline next, real finish line), `mockups/labib-firstrun.png` (onboarding → first coached
+question). With look, brand, mascot, and flow now all defined, the redesign is ready to
+build.
