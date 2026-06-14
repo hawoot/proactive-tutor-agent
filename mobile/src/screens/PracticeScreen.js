@@ -153,7 +153,7 @@ export default function PracticeScreen({ route, navigation }) {
 
   const attachPhoto = () => {
     if (thinking) return;
-    Alert.alert('Photo of your work', 'Snap your handwritten working and Nejma will read it.', [
+    Alert.alert('Photo of your work', 'Snap your handwritten working and Labib will read it.', [
       { text: '📷 Take photo', onPress: () => pickImage('camera') },
       { text: '🖼  Choose from library', onPress: () => pickImage('library') },
       { text: 'Cancel', style: 'cancel' },
@@ -182,7 +182,7 @@ export default function PracticeScreen({ route, navigation }) {
   };
 
   if (phase === 'loading') {
-    return <View style={s.root}><EmptyState pose="think" title="Nejma is picking your question…" /></View>;
+    return <View style={s.root}><EmptyState pose="think" title="Labib is picking your question…" /></View>;
   }
   if (phase === 'error') {
     return (
@@ -207,7 +207,7 @@ export default function PracticeScreen({ route, navigation }) {
         {attempt?.skill_name ? <Chip text={attempt.skill_name} color={colors.blue} /> : null}
         <Chip text={attempt?.from_bank ? 'curated' : 'AI-generated'}
           color={attempt?.from_bank ? colors.good : colors.purple} />
-        {attempt?.source === 'scheduled' ? <Chip text="from Nejma" color={colors.orange} /> : null}
+        {attempt?.source === 'scheduled' ? <Chip text="from Labib" color={colors.orange} /> : null}
       </View>
 
       <ScrollView ref={scrollRef} style={{ flex: 1 }}
@@ -235,7 +235,7 @@ export default function PracticeScreen({ route, navigation }) {
         {thinking ? (
           <View style={[s.bubble, s.tutorBubble, { flexDirection: 'row', alignItems: 'center' }]}>
             <Mascot pose="think" size={28} bob={false} style={{ marginRight: 8 }} />
-            <Text style={s.thinking}>Nejma is thinking…</Text>
+            <Text style={s.thinking}>Labib is thinking…</Text>
           </View>
         ) : null}
 

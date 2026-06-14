@@ -100,7 +100,7 @@ export function NudgeTimes({ times, onChange }) {
         </TouchableOpacity>
       </View>
 
-      <Text style={s.hint}>Nejma pings you at each time, on each chosen day.</Text>
+      <Text style={s.hint}>Labib pings you at each time, on each chosen day.</Text>
 
       <TimePickerSheet visible={pickerOpen} onClose={() => setPickerOpen(false)} onPick={addClock} />
     </View>

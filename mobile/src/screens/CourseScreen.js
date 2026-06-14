@@ -113,11 +113,11 @@ export default function CourseScreen({ route, navigation }) {
                 {enrollment.status === 'active' ? "✅ You're enrolled" : '⏸️ Paused'}
                 {enrollment.exam_date ? ` · 🎯 exam ${enrollment.exam_date.slice(0, 10)}` : ''}
               </Text>
-              <Btn small kind="outline" label="⚙️ Nejma's settings"
+              <Btn small kind="outline" label="⚙️ Labib's settings"
                 onPress={() => setSheet({ type: 'settings' })} />
             </View>
           ) : (
-            <Btn label="Enroll - let Nejma chase you"
+            <Btn label="Enroll - let Labib chase you"
               onPress={() => act(() => api.enroll(userId, programId))} />
           )}
         </Card>
@@ -327,11 +327,11 @@ function TutorSettingsSheet({ visible, enrollment, userId, onClose, onChanged })
   };
 
   return (
-    <Sheet visible={visible} title="Nejma's settings" onClose={onClose}>
+    <Sheet visible={visible} title="Labib's settings" onClose={onClose}>
       <ErrorText>{err}</ErrorText>
       <Field label="🎯 Exam date" value={examDate} onChangeText={setExamDate}
         placeholder="YYYY-MM-DD (empty = none)" autoCapitalize="none"
-        hint="The closer the exam, the more often Nejma nudges you." />
+        hint="The closer the exam, the more often Labib nudges you." />
       {group('question_source')}
       {group('selection_strategy')}
       {group('marking_strictness')}
@@ -392,7 +392,7 @@ function UnitEditor({ visible, sheet, programId, userId, onClose, onSaved }) {
       <ErrorText>{err}</ErrorText>
       <Field label="Title" value={title} onChangeText={setTitle} placeholder="e.g. Calculus" />
       <Field label="Material" value={content} onChangeText={setContent} multiline
-        placeholder="Notes Nejma can set questions from…" />
+        placeholder="Notes Labib can set questions from…" />
       <Btn label={unit ? 'Save' : 'Add topic'} onPress={save} busy={busy} />
     </Sheet>
   );
@@ -548,7 +548,7 @@ function QuestionBank({ visible, skill, userId, onClose }) {
           {questions === null ? <Text style={type.meta}>Loading…</Text> : null}
           {questions !== null && questions.length === 0 ? (
             <Text style={[type.meta, { marginBottom: 8 }]}>
-              No curated questions yet - Nejma improvises for this skill.
+              No curated questions yet - Labib improvises for this skill.
             </Text>
           ) : null}
           {(questions || []).map((q, i) => (
