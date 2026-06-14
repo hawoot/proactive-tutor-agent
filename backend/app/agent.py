@@ -10,7 +10,6 @@ plus its name in schemas.SelectionStrategy so the API accepts it.
 """
 import math
 import random
-import re
 from datetime import datetime, timedelta
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -308,73 +307,12 @@ def pick_bank_question(db: Session, user_id: int, skill_id: int) -> Question | N
     return qs[0]
 
 
-def _recent_signal(db: Session, user_id: int) -> str | None:
-    """Is there a clear teaching inflection in the last few answers? This is the
-    ONLY thing that triggers an LLM steer; routine turns stay deterministic."""
-    recent = db.execute(
-        select(Attempt.verdict).where(
-            Attempt.user_id == user_id,
-            Attempt.verdict.in_(["correct", "partial", "wrong"]))
-        .order_by(Attempt.asked_at.desc()).limit(3)
-    ).scalars().all()
-    if len(recent) < 3:
-        return None
-    if sum(v in ("wrong", "partial") for v in recent) >= 2:
-        return "struggling"
-    if all(v == "correct" for v in recent):
-        return "mastering"
-    return None
-
-
-def _maybe_llm_resteer(db: Session, user: User, enrollments: list[Enrollment],
-                       effort, excl_s: set, excl_u: set):
-    """At an inflection point, let the LLM choose among the deterministic
-    candidates (step back vs advance). Bounded, validated, fully fallback-safe:
-    it can only ever return one of the skills the guardrails already allowed."""
-    signal = _recent_signal(db, user.id)
-    if not signal:
-        return None
-    now = utcnow()
-    cands = _eligible(db, enrollments, now, respect_cooldown=False,
-                      exclude_skill_ids=excl_s, exclude_unit_ids=excl_u, effort=effort)
-    if len(cands) < 2:
-        return None
-    top = sorted(((_priority(s, st, e, now, _weights(e)), (s, st, e)) for (s, st, e) in cands),
-                 key=lambda x: x[0], reverse=True)[:6]
-    menu = "\n".join(
-        f"- id={s.id} | {s.name} | mastery={st.score:.2f} | "
-        f"{'never tried' if st.attempts == 0 else str(st.attempts) + ' tries'}"
-        f"{' | watch: ' + st.note[:80] if st.note else ''}"
-        for _p, (s, st, e) in top)
-    profile = (user.profile_note or "(no profile yet)")[:600]
-    try:
-        out = llm.ask(
-            f"""You choose the next practice skill for a learner who is {signal}.
-Learner profile: {profile}
-Options (already filtered to sensible choices):
-{menu}
-
-If struggling, prefer a more foundational/easier skill they can win at.
-If mastering, prefer to advance or broaden. Pick exactly ONE id from the list.
-Reply on one line only: CHOICE: <id>""", max_tokens=60)
-    except Exception:
-        return None
-    m = re.search(r"CHOICE:\s*(\d+)", out or "")
-    if not m:
-        return None
-    chosen = int(m.group(1))
-    for _p, cand in top:
-        if cand[0].id == chosen:
-            return cand
-    return None
-
-
 def ask_question(db: Session, user: User, enrollments: list[Enrollment],
                  source: str, effort: str | None = None) -> Attempt | None:
-    """Pick a skill (focus-aware, guardrailed, LLM-steered at inflection points),
-    then source the question per the enrollment's question_source policy:
-    bank_first (curated, fall back to generation), bank_only (trusted set only),
-    generate_only (always creative). Scheduled asks respect the repeat cooldown."""
+    """Pick a skill (focus-aware, guardrailed, fully deterministic), then source
+    the question per the enrollment's question_source policy: bank_first (curated,
+    fall back to generation), bank_only (trusted set only), generate_only (always
+    creative). Scheduled asks respect the repeat cooldown."""
     # FOCUS is a deterministic user choice that overrides interleave.
     if user.focus_enrollment_id:
         focused = [e for e in enrollments if e.id == user.focus_enrollment_id]
@@ -398,8 +336,6 @@ def ask_question(db: Session, user: User, enrollments: list[Enrollment],
                         exclude_skill_ids=excl_s, exclude_unit_ids=excl_u)
     if not picked:
         return None
-    # Routine turns stop here; only an inflection lets the LLM re-steer the choice.
-    picked = _maybe_llm_resteer(db, user, enrollments, effort, excl_s, excl_u) or picked
     skill, _state, enr = picked
 
     policy = enr.question_source
