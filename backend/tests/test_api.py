@@ -40,8 +40,8 @@ def test_everything():
         u = c.post("/units?user_id=1", json={"program_id": p["id"], "title": "Topic"}, headers=H).json()
         s = c.post("/skills?user_id=1", json={
             "program_id": p["id"], "unit_id": u["id"], "name": "Skill A"}, headers=H).json()
-        assert c.patch(f"/skills/{s['id']}?user_id=1", json={"effort": "deep"},
-                       headers=H).json()["effort"] == "deep"
+        assert c.patch(f"/skills/{s['id']}?user_id=1", json={"kind": "code"},
+                       headers=H).json()["kind"] == "code"
         # cross-program parent rejected
         assert c.post("/units?user_id=1", json={
             "program_id": p["id"], "parent_id": 1, "title": "bad"}, headers=H).status_code == 400
@@ -59,14 +59,14 @@ def test_everything():
                       headers=H).status_code == 403
 
         # policy toggles: structured enums - valid values stick, junk is rejected
-        assert "round_robin" in c.get("/policies", headers=H).json()["selection_strategy"]["options"]
+        assert "on_the_go" in c.get("/policies", headers=H).json()["mode"]["options"]
         enr2 = c.post("/enrollments", json={"user_id": 1, "program_id": p["id"]}, headers=H).json()
         r = c.patch(f"/enrollments/{enr2['id']}", json={
-            "selection_strategy": "due_then_unseen", "marking_strictness": "lenient",
+            "marking_strictness": "lenient",
             "question_style": "plain", "repeat_cooldown_hours": 2}, headers=H)
-        assert r.json()["selection_strategy"] == "due_then_unseen"
+        assert r.json()["marking_strictness"] == "lenient"
         assert c.patch(f"/enrollments/{enr2['id']}", json={
-            "selection_strategy": "wild_west"}, headers=H).status_code == 422
+            "marking_strictness": "wild_west"}, headers=H).status_code == 422
         assert c.patch(f"/enrollments/{enr2['id']}", json={
             "repeat_cooldown_hours": 999}, headers=H).status_code == 422
 

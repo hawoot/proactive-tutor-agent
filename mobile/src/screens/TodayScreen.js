@@ -25,7 +25,7 @@ export default function TodayScreen({ navigation }) {
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const refresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
-  const practice = (effort) => navigation.navigate('Practice', { effort });
+  const practice = (mode) => navigation.navigate('Practice', mode ? { mode } : {});
 
   // Dismiss the waiting question (mastery untouched) and refresh — one tap,
   // no prompt. Start the next one from the hero or quick actions when ready.
@@ -105,11 +105,11 @@ export default function TodayScreen({ navigation }) {
           {/* quick/deep on-demand */}
           {data.has_active_enrollment && !data.open_attempt ? (
             <View style={s.quickRow}>
-              <TouchableOpacity style={s.quickBtn} onPress={() => practice('quick')}>
-                <Text style={s.quickText}>⚡ Quick one</Text>
+              <TouchableOpacity style={s.quickBtn} onPress={() => practice('on_the_go')}>
+                <Text style={s.quickText}>📱 On the go</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.quickBtn} onPress={() => practice('deep')}>
-                <Text style={s.quickText}>🧠 Deep dive</Text>
+              <TouchableOpacity style={s.quickBtn} onPress={() => practice('problem')}>
+                <Text style={s.quickText}>🧩 Problem</Text>
               </TouchableOpacity>
             </View>
           ) : null}

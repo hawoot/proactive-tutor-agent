@@ -11,7 +11,7 @@ import {
   Btn, Card, Chip, Bar, Field, Sheet, Choice, ErrorText, EmptyState, SectionTitle,
 } from '../components';
 import { colors, pad, type } from '../theme';
-import { POLICY_LABELS, EFFORT_LABELS } from '../labels';
+import { POLICY_LABELS } from '../labels';
 
 export default function CourseScreen({ route, navigation }) {
   const programId = route.params.id;
@@ -248,7 +248,7 @@ function SkillRow({ skill, editMode, mastery, onEdit, onBank, onDelete }) {
     <Card style={{ paddingVertical: 10, marginVertical: 3 }}>
       <View style={s.unitHead}>
         <Text style={s.skillName} numberOfLines={2}>{skill.name}</Text>
-        <Text style={s.unitMeta}>{EFFORT_LABELS[skill.effort] || skill.effort}</Text>
+        <Text style={s.unitMeta}>{skill.kind}</Text>
       </View>
       {mastery ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
@@ -290,7 +290,6 @@ function TutorSettingsSheet({ visible, enrollment, userId, onClose, onChanged })
     setErr('');
     setValues({
       question_source: enrollment.question_source,
-      selection_strategy: enrollment.selection_strategy,
       marking_strictness: enrollment.marking_strictness,
       question_style: enrollment.question_style,
     });
@@ -333,7 +332,6 @@ function TutorSettingsSheet({ visible, enrollment, userId, onClose, onChanged })
         placeholder="YYYY-MM-DD (empty = none)" autoCapitalize="none"
         hint="The closer the exam, the more often Labib nudges you." />
       {group('question_source')}
-      {group('selection_strategy')}
       {group('marking_strictness')}
       <Btn label="Save settings" onPress={save} busy={busy} />
       <View style={s.dangerRow}>
@@ -398,20 +396,18 @@ function UnitEditor({ visible, sheet, programId, userId, onClose, onSaved }) {
   );
 }
 
-const QUESTION_TYPES = ['numeric', 'symbolic', 'mcq', 'code', 'rubric'];
 
 function SkillEditor({ visible, sheet, programId, userId, onClose, onSaved }) {
   const skill = sheet?.skill;
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [qtype, setQtype] = useState('numeric');
-  const [effort, setEffort] = useState('quick');
+  const [kind, setKind] = useState('concept');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
   React.useEffect(() => {
     setName(skill?.name || ''); setDescription(skill?.description || '');
-    setQtype(skill?.question_type || 'numeric'); setEffort(skill?.effort || 'quick');
+    setKind(skill?.kind || 'concept');
     setErr('');
   }, [sheet]);
 
@@ -419,7 +415,7 @@ function SkillEditor({ visible, sheet, programId, userId, onClose, onSaved }) {
     if (!name.trim()) { setErr('Name is required.'); return; }
     setBusy(true); setErr('');
     try {
-      const payload = { name: name.trim(), description, question_type: qtype, effort };
+      const payload = { name: name.trim(), description, kind };
       if (skill) await api.updateSkill(skill.id, userId, payload);
       else await api.createSkill(userId, { ...payload, program_id: programId, unit_id: sheet?.unitId ?? null });
       onSaved();
@@ -432,13 +428,12 @@ function SkillEditor({ visible, sheet, programId, userId, onClose, onSaved }) {
       <ErrorText>{err}</ErrorText>
       <Field label="Name" value={name} onChangeText={setName} placeholder="e.g. Integration by parts" />
       <Field label="Context for the question writer" value={description} onChangeText={setDescription} multiline />
-      <Text style={[type.label, { marginBottom: 6 }]}>Question type</Text>
-      <Choice value={qtype} onChange={setQtype}
-        options={QUESTION_TYPES.map((v) => ({ value: v, label: v }))} />
-      <Text style={[type.label, { marginBottom: 6 }]}>Effort</Text>
-      <Choice value={effort} onChange={setEffort} options={[
-        { value: 'quick', label: '⚡ Quick', hint: 'Answerable on a phone in a minute or two.' },
-        { value: 'deep', label: '🧠 Deep', hint: 'Pen-and-paper, proper working.' },
+      <Text style={[type.label, { marginBottom: 6 }]}>Kind (helps the question writer)</Text>
+      <Choice value={kind} onChange={setKind} options={[
+        { value: 'math', label: '➗ Maths', hint: 'Numeric / symbolic working.' },
+        { value: 'code', label: '💻 Code', hint: 'Programming / DS&A.' },
+        { value: 'stats', label: '📊 Stats', hint: 'Probability / statistics.' },
+        { value: 'concept', label: '💡 Concept', hint: 'Definitions, ideas, true/false.' },
       ]} />
       <Btn label={skill ? 'Save' : 'Add skill'} onPress={save} busy={busy} />
     </Sheet>

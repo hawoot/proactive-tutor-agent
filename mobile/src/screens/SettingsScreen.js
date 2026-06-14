@@ -31,6 +31,7 @@ export default function SettingsScreen() {
   const [remCount, setRemCount] = useState(null);
   const [enrollments, setEnrollments] = useState([]);
   const [focusId, setFocusId] = useState(null);  // null = interleave (mix all courses)
+  const [qSource, setQSource] = useState('bank_first');  // bank_first | bank_only
   const [err, setErr] = useState('');
 
   const loadPrefs = useCallback(async () => {
@@ -48,6 +49,7 @@ export default function SettingsScreen() {
       setTimes(sched.length > 0 ? sched : DEFAULT_TIMES);
       setEnrollments(enrs || []);
       setFocusId(u.focus_enrollment_id ?? null);
+      setQSource((enrs && enrs[0]?.question_source) || 'bank_first');
     } catch { setPrefs(null); setTimes(null); }
   }, []);
 
@@ -126,6 +128,14 @@ export default function SettingsScreen() {
     } catch (e) { setErr(e.message); }
   };
 
+  // Curated-only vs curated+AI — applied across all the user's courses.
+  const setSource = async (val) => {
+    setQSource(val);
+    try {
+      await Promise.all(enrollments.map((e) => api.updateEnrollment(e.id, { question_source: val })));
+    } catch (e) { setErr(e.message); }
+  };
+
   return (
     <ScrollView style={s.root} contentContainerStyle={{ padding: pad, paddingBottom: 48 }}>
       <ErrorText>{err}</ErrorText>
@@ -175,6 +185,23 @@ export default function SettingsScreen() {
                     ...enrollments.map((e) => ({
                       value: e.id, label: `🎯 ${e.program_title || 'Course'}`,
                       hint: 'Focus — practise only this course until you switch.' })),
+                  ]}
+                />
+              </Card>
+
+              <SectionTitle>Questions</SectionTitle>
+              <Card>
+                <Text style={[type.meta, { marginBottom: 8 }]}>
+                  Use only the trusted curated bank, or let Labib generate with AI when the bank runs dry.
+                </Text>
+                <Choice
+                  value={qSource}
+                  onChange={setSource}
+                  options={[
+                    { value: 'bank_first', label: '✨ Curated + AI',
+                      hint: 'Curated first; AI generates when needed. More variety, slight wait.' },
+                    { value: 'bank_only', label: '✓ Curated only',
+                      hint: 'Only trusted curated questions — instant, no AI. Limited to the bank.' },
                   ]}
                 />
               </Card>

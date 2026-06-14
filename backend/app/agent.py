@@ -49,16 +49,7 @@ def update_skill_state(st: SkillState, verdict: str) -> None:
 #
 # candidate = (Skill, SkillState, Enrollment)
 
-W_BASE = {"overdue": 1.0, "weakness": 1.0, "novelty": 0.6, "exam": 0.8, "fatigue": 1.5}
-
-# strategy name -> weight overrides. The KEYS still power the /policies endpoint
-# (main.py lists them) and the schemas.SelectionStrategy enum.
-SELECTION_STRATEGIES = {
-    "due_then_weakest": {},                                  # defaults (weakness-leaning)
-    "due_then_unseen": {"novelty": 1.2},                     # favour coverage
-    "round_robin": {"novelty": 1.0, "weakness": 0.5},        # even rotation
-}
-
+W = {"overdue": 1.0, "weakness": 1.0, "novelty": 0.6, "exam": 0.8, "fatigue": 1.5}
 TOP_K = 4             # softmax-sample among the strongest few
 TEMPERATURE = 0.7     # spread: lower = focused, higher = adventurous (the "mix it up" dial)
 NOVELTY_FULL_DAYS = 14.0
@@ -69,9 +60,7 @@ def _hours_since(ts: datetime | None, now: datetime) -> float | None:
 
 
 def _weights(enr: Enrollment) -> dict:
-    w = dict(W_BASE)
-    w.update(SELECTION_STRATEGIES.get(getattr(enr, "selection_strategy", "") or "", {}))
-    return w
+    return dict(W)  # one global weight set now (no per-enrollment strategy)
 
 
 def _exam_urgency(enr: Enrollment, now: datetime) -> float:
@@ -122,19 +111,20 @@ def _sample_top_k(scored: list[tuple[float, tuple]]) -> tuple:
 
 def _eligible(db: Session, enrollments: list[Enrollment], now: datetime, *,
               respect_cooldown: bool, exclude_skill_ids: set, exclude_unit_ids: set,
-              effort: str | None) -> list[tuple]:
+              restrict_skill_ids: set | None = None) -> list[tuple]:
     """The GUARDRAILS: drop anything off-limits this turn, return what's left.
     no-repeat (exclude_skill_ids) + skip-leaves-the-topic (exclude_unit_ids) +
-    (when strict) a just-seen, not-yet-due skill is held back."""
+    (when strict) a just-seen, not-yet-due skill is held back +
+    (curated-only) restrict to skills that have a curated question of the mode."""
     out = []
     for enr in enrollments:
         ensure_skill_states(db, enr)
         q = (select(Skill, SkillState)
              .join(SkillState, SkillState.skill_id == Skill.id)
              .where(SkillState.enrollment_id == enr.id))
-        if effort:
-            q = q.where(Skill.effort == effort)
         for skill, st in db.execute(q).all():
+            if restrict_skill_ids is not None and skill.id not in restrict_skill_ids:
+                continue
             if skill.id in exclude_skill_ids:
                 continue
             if skill.unit_id and skill.unit_id in exclude_unit_ids:
@@ -168,28 +158,32 @@ def ensure_skill_states(db: Session, enrollment: Enrollment) -> None:
         db.flush()
 
 
-def pick_skill(db: Session, enrollments: list[Enrollment], effort: str | None = None,
-               respect_cooldown: bool = True, exclude_skill_ids=None,
-               exclude_unit_ids=None) -> tuple[Skill, SkillState, Enrollment] | None:
+def pick_skill(db: Session, enrollments: list[Enrollment], respect_cooldown: bool = True,
+               exclude_skill_ids=None, exclude_unit_ids=None,
+               restrict_skill_ids=None) -> tuple[Skill, SkillState, Enrollment] | None:
     """Score every eligible skill, then softmax-sample from the top few.
 
     Guardrails first (see _eligible): no immediate repeat, skip leaves the topic,
-    and - when respect_cooldown - a just-seen, not-due skill is held back. The
-    scheduler asks strictly (returns None -> no nudge); the on-demand path relaxes
-    the cooldown, then the excludes, so an explicit ask always gets a question."""
+    a just-seen not-due skill held back (when strict), and - in curated-only mode -
+    only skills with a curated question of the requested mode (restrict_skill_ids).
+    The scheduler asks strictly (None -> no nudge); on-demand relaxes the cooldown,
+    then the excludes, so an explicit ask always gets a question."""
     now = utcnow()
     excl_s = set(exclude_skill_ids or [])
     excl_u = set(exclude_unit_ids or [])
     cands = _eligible(db, enrollments, now, respect_cooldown=respect_cooldown,
-                      exclude_skill_ids=excl_s, exclude_unit_ids=excl_u, effort=effort)
+                      exclude_skill_ids=excl_s, exclude_unit_ids=excl_u,
+                      restrict_skill_ids=restrict_skill_ids)
     if not cands and respect_cooldown:
         return None                                       # scheduler-strict: no nudge
     if not cands:                                          # on-demand: relax the cooldown
         cands = _eligible(db, enrollments, now, respect_cooldown=False,
-                          exclude_skill_ids=excl_s, exclude_unit_ids=excl_u, effort=effort)
-    if not cands:                                          # last resort: drop the excludes too
+                          exclude_skill_ids=excl_s, exclude_unit_ids=excl_u,
+                          restrict_skill_ids=restrict_skill_ids)
+    if not cands:                                          # last resort: drop the excludes (keep curated restriction)
         cands = _eligible(db, enrollments, now, respect_cooldown=False,
-                          exclude_skill_ids=set(), exclude_unit_ids=set(), effort=effort)
+                          exclude_skill_ids=set(), exclude_unit_ids=set(),
+                          restrict_skill_ids=restrict_skill_ids)
     if not cands:
         return None
     scored = [(_priority(s, st, enr, now, _weights(enr)), (s, st, enr))
@@ -215,16 +209,30 @@ MARKING_RUBRICS = {
 }
 
 
-def generate_question(db: Session, user: User, skill: Skill,
+MODE_BRIEFS = {
+    "on_the_go": ("a quick ON-THE-GO question that needs no pen or paper. STRONGLY "
+                  "prefer a common TRAP, misconception or big no-no (e.g. a tempting-"
+                  "but-wrong statement, an anti-pattern, a complexity gotcha); otherwise "
+                  "a true/false, a spot-the-error, a counterexample, a sharp concept "
+                  "check, or an MCQ. Short, answerable on a phone in seconds."),
+    "short_drill": ("a SHORT practice question: needs pen and paper but only a few "
+                    "steps. It can be hard, but not many steps."),
+    "problem": ("a multi-step PROBLEM, textbook-exercise style: several steps to a "
+                "full solution."),
+}
+
+
+def generate_question(db: Session, user: User, skill: Skill, mode: str = "short_drill",
                       enrollment: Enrollment | None = None) -> str:
     ctx = ContextRetriever(db).build(user, skill)
     style = STYLE_RULES.get(
         enrollment.question_style if enrollment else "plain", STYLE_RULES["plain"])
-    prompt = f"""Set ONE {skill.question_type} question on "{skill.name}".
+    brief = MODE_BRIEFS.get(mode, MODE_BRIEFS["short_drill"])
+    prompt = f"""Set ONE question on "{skill.name}" (subject area: {skill.kind}).
+Make it {brief}
 {ctx.shared}
 {ctx.personal}
 {ctx.session}
-Effort budget: {skill.effort} ({'phone-only, short' if skill.effort == 'quick' else 'paper/keyboard ok'}).
 {style}
 End your reply with the final question on its own line, prefixed exactly with:
 QUESTION: """
@@ -289,12 +297,14 @@ def open_attempt(db: Session, user_id: int) -> Attempt | None:
     ).scalars().first()
 
 
-def pick_bank_question(db: Session, user_id: int, skill_id: int) -> Question | None:
-    """Least-recently-served-to-this-user first (never-served wins)."""
-    qs = db.execute(
-        select(Question).where(Question.skill_id == skill_id)
-        .order_by(Question.position, Question.id)
-    ).scalars().all()
+def pick_bank_question(db: Session, user_id: int, skill_id: int,
+                       mode: str | None = None) -> Question | None:
+    """Least-recently-served-to-this-user first (never-served wins).
+    If mode is given, only curated questions of that mode are considered."""
+    q = select(Question).where(Question.skill_id == skill_id)
+    if mode:
+        q = q.where(Question.mode == mode)
+    qs = db.execute(q.order_by(Question.position, Question.id)).scalars().all()
     if not qs:
         return None
     last_served = dict(db.execute(
@@ -307,12 +317,27 @@ def pick_bank_question(db: Session, user_id: int, skill_id: int) -> Question | N
     return qs[0]
 
 
+def _skills_with_curated(db: Session, enrollments: list[Enrollment],
+                         mode: str | None) -> set:
+    """skill_ids (across the enrollments' programs) that have >=1 curated question
+    of `mode` - or of any mode when mode is None."""
+    prog_ids = {e.program_id for e in enrollments}
+    if not prog_ids:
+        return set()
+    q = (select(Question.skill_id)
+         .join(Skill, Skill.id == Question.skill_id)
+         .where(Skill.program_id.in_(prog_ids)))
+    if mode:
+        q = q.where(Question.mode == mode)
+    return {sid for (sid,) in db.execute(q)}
+
+
 def ask_question(db: Session, user: User, enrollments: list[Enrollment],
-                 source: str, effort: str | None = None) -> Attempt | None:
-    """Pick a skill (focus-aware, guardrailed, fully deterministic), then source
-    the question per the enrollment's question_source policy: bank_first (curated,
-    fall back to generation), bank_only (trusted set only), generate_only (always
-    creative). Scheduled asks respect the repeat cooldown."""
+                 source: str, mode: str | None = None) -> Attempt | None:
+    """Pick a skill (focus-aware, guardrailed, deterministic), then source a
+    question in the requested MODE per the enrollment's question_source policy:
+    bank_first (curated of the mode, else generate), bank_only (curated only),
+    generate_only (always generate). Scheduled asks respect the repeat cooldown."""
     # FOCUS is a deterministic user choice that overrides interleave.
     if user.focus_enrollment_id:
         focused = [e for e in enrollments if e.id == user.focus_enrollment_id]
@@ -331,9 +356,16 @@ def ask_question(db: Session, user: User, enrollments: list[Enrollment],
             if sk and sk.unit_id:
                 excl_u = {sk.unit_id}
 
-    picked = pick_skill(db, enrollments, effort=effort,
-                        respect_cooldown=(source == "scheduled"),
-                        exclude_skill_ids=excl_s, exclude_unit_ids=excl_u)
+    # Curated-only: restrict selection to skills that actually have a curated
+    # question (of this mode if possible, else any) so it never dead-ends.
+    restrict = None
+    if enrollments and all(e.question_source == "bank_only" for e in enrollments):
+        restrict = _skills_with_curated(db, enrollments, mode) \
+            or _skills_with_curated(db, enrollments, None)
+
+    picked = pick_skill(db, enrollments, respect_cooldown=(source == "scheduled"),
+                        exclude_skill_ids=excl_s, exclude_unit_ids=excl_u,
+                        restrict_skill_ids=restrict)
     if not picked:
         return None
     skill, _state, enr = picked
@@ -341,13 +373,16 @@ def ask_question(db: Session, user: User, enrollments: list[Enrollment],
     policy = enr.question_source
     bank_q = None
     if policy in ("bank_first", "bank_only"):
-        bank_q = pick_bank_question(db, user.id, skill.id)
+        bank_q = pick_bank_question(db, user.id, skill.id, mode)
+        if not bank_q and policy == "bank_only":
+            bank_q = pick_bank_question(db, user.id, skill.id, None)  # any curated for this skill
     if bank_q:
         question, question_id = bank_q.text, bank_q.id
     elif policy == "bank_only":
-        return None  # trusted set is empty for every pickable skill's turn
+        return None  # no curated question available for any pickable skill
     else:
-        question, question_id = generate_question(db, user, skill, enrollment=enr), None
+        question = generate_question(db, user, skill, mode or "short_drill", enrollment=enr)
+        question_id = None
 
     attempt = Attempt(
         user_id=user.id, enrollment_id=enr.id, skill_id=skill.id,

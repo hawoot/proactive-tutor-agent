@@ -6,7 +6,8 @@ from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
-SelectionStrategy = Literal["due_then_weakest", "due_then_unseen", "round_robin"]
+Mode = Literal["on_the_go", "short_drill", "problem"]
+SkillKind = Literal["math", "code", "stats", "concept"]
 MarkingStrictness = Literal["strict", "balanced", "lenient"]
 QuestionStyle = Literal["plain", "latex"]
 QuestionSource = Literal["bank_first", "bank_only", "generate_only"]
@@ -137,16 +138,14 @@ class SkillCreate(BaseModel):
     unit_id: int | None = None
     name: str
     description: str = ""
-    question_type: str = "numeric"
-    effort: str = "quick"
+    kind: SkillKind = "concept"
     position: int = 0
 
 
 class SkillUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
-    question_type: str | None = None
-    effort: str | None = None
+    kind: SkillKind | None = None
     position: int | None = None
     unit_id: int | None = None
 
@@ -158,8 +157,7 @@ class SkillOut(ORM):
     position: int
     name: str
     description: str
-    question_type: str
-    effort: str
+    kind: str
     question_count: int = 0  # curated questions in the bank for this skill
 
 
@@ -210,7 +208,6 @@ class EnrollmentUpdate(BaseModel):
     exam_date: datetime | None = None
     clear_exam_date: bool = False
     # policy toggles - validated enums + bounded numbers
-    selection_strategy: SelectionStrategy | None = None
     repeat_cooldown_hours: float | None = Field(None, ge=0, le=168)
     marking_strictness: MarkingStrictness | None = None
     question_style: QuestionStyle | None = None
@@ -223,7 +220,6 @@ class EnrollmentOut(ORM):
     program_id: int
     status: str
     exam_date: datetime | None
-    selection_strategy: str
     repeat_cooldown_hours: float
     marking_strictness: str
     question_style: str
@@ -236,7 +232,7 @@ class EnrollmentOut(ORM):
 class QuestionRequest(BaseModel):
     user_id: int
     enrollment_id: int | None = None  # default: pick across all active enrollments
-    effort: str | None = None         # quick | deep
+    mode: Mode | None = None          # on_the_go | short_drill | problem
 
 
 class AnswerRequest(BaseModel):
@@ -289,6 +285,8 @@ class QuestionCreate(BaseModel):
     text: str
     answer: str = ""
     commentary: str = ""
+    mode: Mode = "short_drill"
+    style: str = ""
     position: int = 0
     source: str = "curated"
 
@@ -297,6 +295,8 @@ class QuestionUpdate(BaseModel):
     text: str | None = None
     answer: str | None = None
     commentary: str | None = None
+    mode: Mode | None = None
+    style: str | None = None
     position: int | None = None
 
 
@@ -307,4 +307,6 @@ class QuestionOut(ORM):
     text: str
     answer: str
     commentary: str
+    mode: str
+    style: str
     source: str
