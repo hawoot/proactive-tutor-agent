@@ -20,11 +20,16 @@ import { Btn, Chip, ErrorText, EmptyState, Mascot, Sheet } from '../components';
 import { colors, pad, radius, type, shadow } from '../theme';
 import { VERDICTS } from '../labels';
 
-// The two ways to ask for help. "Walk me through it" is the encouraged path: it
-// opens with a small hint and guides only as much as needed.
+// Help as a ladder of how much you want lifted (solution always last):
+//  - Walk me through it : I have the basics, just guide me through THIS one.
+//  - Back up to basics  : I'm missing prerequisites — rewind and teach the
+//                         foundation first, then come back. (Not the solution.)
+//  - Show me the solution : just show the full worked answer.
 const HELP_REPLIES = [
   { label: '🧭 Walk me through it', primary: true,
     text: "I want to solve this myself — walk me through it step by step. Start with a small hint and let me try each step. Don't give me the full solution yet." },
+  { label: '🪜 Back up to basics',
+    text: "I think I'm missing the prerequisites for this — I have the will but not the basics. Don't show me the solution. Help me figure out which foundational idea I'm missing, teach me that first with a simpler example, then bring me back to this question." },
   { label: '👁 Show me the solution',
     text: 'Please show me the full solution and walk me through it.' },
 ];
@@ -366,7 +371,7 @@ export default function PracticeScreen({ route, navigation }) {
             ))}
           </View>
         ) : (
-          // two help buttons — Walk me through it (primary) / Show me the solution
+          // help ladder — Walk me through it (primary) / Back up to basics / Show me the solution
           <View style={s.helpRow}>
             {HELP_REPLIES.map((q) => (
               <TouchableOpacity
@@ -490,13 +495,13 @@ const s = StyleSheet.create({
     backgroundColor: colors.bg, paddingHorizontal: 10, paddingTop: 8, paddingBottom: 10,
   },
   // two help buttons
-  helpRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  helpRow: { flexDirection: 'row', gap: 6, marginBottom: 8 },
   helpBtn: {
-    flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 11, paddingHorizontal: 6,
-    borderRadius: radius.md, backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.line, ...shadow.sm,
+    flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 10, paddingHorizontal: 4,
+    minHeight: 56, borderRadius: radius.md, backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.line, ...shadow.sm,
   },
   helpBtnPrimary: { borderColor: colors.primary, backgroundColor: colors.primary + '1F' },
-  helpText: { fontSize: 12.5, fontWeight: '800', color: colors.ink },
+  helpText: { fontSize: 11.5, fontWeight: '800', color: colors.ink, textAlign: 'center' },
   helpTextPrimary: { color: colors.primaryDark },
   quickRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
   quickChip: {

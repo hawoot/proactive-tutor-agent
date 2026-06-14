@@ -8,6 +8,9 @@ repeat cooldown, marking strictness, question style). Strategies live in the
 SELECTION_STRATEGIES registry - adding one = one function + one entry here,
 plus its name in schemas.SelectionStrategy so the API accepts it.
 """
+import math
+import random
+import re
 from datetime import datetime, timedelta
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -15,7 +18,7 @@ from . import llm
 from .models import (
     utcnow, User, Enrollment, Skill, SkillState, Attempt, AttemptMessage, Question,
 )
-from .retrieval import ContextRetriever, maybe_update_profile
+from .retrieval import ContextRetriever, maybe_update_profile, maybe_update_skill_note
 
 
 # --- deterministic mastery update (NOT the LLM's job) ----------------------
@@ -39,35 +42,111 @@ def update_skill_state(st: SkillState, verdict: str) -> None:
     st.due_at = st.last_seen_at + timedelta(hours=st.interval_hours)
 
 
-# --- selection strategies (the registry behind the policy toggle) -----------
-# Each takes (candidates, now) and returns them best-first.
+# --- selection: score every skill, then sample (interleave + explore) -------
+# The next question is chosen by a weighted PRIORITY per skill, then a softmax
+# sample from the top few - NOT a greedy argmin. This kills the "tunnel on the
+# weakest skill" failure and gives natural variety. The weights are knobs; the
+# enrollment's selection_strategy nudges them.
+#
 # candidate = (Skill, SkillState, Enrollment)
 
-def _is_due(st: SkillState, now: datetime) -> bool:
-    return bool(st.due_at and st.due_at <= now)
+W_BASE = {"overdue": 1.0, "weakness": 1.0, "novelty": 0.6, "exam": 0.8, "fatigue": 1.5}
 
-
-def _due_then_weakest(cands, now):
-    """Spaced-repetition reviews first, then lowest mastery."""
-    return sorted(cands, key=lambda c: (not _is_due(c[1], now), c[1].score))
-
-
-def _due_then_unseen(cands, now):
-    """Reviews first, then skills never attempted (coverage), then weakest."""
-    return sorted(cands, key=lambda c: (
-        not _is_due(c[1], now), c[1].attempts > 0, c[1].score))
-
-
-def _round_robin(cands, now):
-    """Even rotation: least-recently-seen first (never-seen counts as oldest)."""
-    return sorted(cands, key=lambda c: c[1].last_seen_at or datetime.min)
-
-
+# strategy name -> weight overrides. The KEYS still power the /policies endpoint
+# (main.py lists them) and the schemas.SelectionStrategy enum.
 SELECTION_STRATEGIES = {
-    "due_then_weakest": _due_then_weakest,
-    "due_then_unseen": _due_then_unseen,
-    "round_robin": _round_robin,
+    "due_then_weakest": {},                                  # defaults (weakness-leaning)
+    "due_then_unseen": {"novelty": 1.2},                     # favour coverage
+    "round_robin": {"novelty": 1.0, "weakness": 0.5},        # even rotation
 }
+
+TOP_K = 4             # softmax-sample among the strongest few
+TEMPERATURE = 0.7     # spread: lower = focused, higher = adventurous (the "mix it up" dial)
+NOVELTY_FULL_DAYS = 14.0
+
+
+def _hours_since(ts: datetime | None, now: datetime) -> float | None:
+    return (now - ts).total_seconds() / 3600.0 if ts else None
+
+
+def _weights(enr: Enrollment) -> dict:
+    w = dict(W_BASE)
+    w.update(SELECTION_STRATEGIES.get(getattr(enr, "selection_strategy", "") or "", {}))
+    return w
+
+
+def _exam_urgency(enr: Enrollment, now: datetime) -> float:
+    """0 normally; ramps toward 1 as a course's exam approaches (within ~60 days).
+    Only matters when interleaving across courses - it pulls focus when it counts."""
+    exam = getattr(enr, "exam_date", None)
+    if not exam:
+        return 0.0
+    days = (exam - now).total_seconds() / 86400.0
+    if days <= 0:
+        return 1.0
+    return max(0.0, 1.0 - days / 60.0)
+
+
+def _priority(skill: Skill, st: SkillState, enr: Enrollment, now: datetime, w: dict) -> float:
+    if st.due_at is None:                       # never scheduled -> treat as due now
+        overdue = 1.0
+    elif st.due_at > now:                       # not due yet
+        overdue = 0.0
+    else:
+        overdue = min((now - st.due_at).total_seconds() / 3600.0 / (st.interval_hours or 12.0), 2.0)
+    weakness = 1.0 - (st.score or 0.0)
+    h = _hours_since(st.last_seen_at, now)
+    novelty = 1.0 if (st.attempts == 0 or h is None) else min((h / 24.0) / NOVELTY_FULL_DAYS, 1.0)
+    fatigue = 0.0 if h is None else max(0.0, 1.0 - h / (enr.repeat_cooldown_hours or 6.0))
+    return (w["overdue"] * overdue + w["weakness"] * weakness + w["novelty"] * novelty
+            + w["exam"] * _exam_urgency(enr, now) - w["fatigue"] * fatigue)
+
+
+def _sample_top_k(scored: list[tuple[float, tuple]]) -> tuple:
+    """scored = [(priority, candidate)]. Softmax-sample among the top K so the
+    strongest is most likely but not guaranteed -> variety, and no brittleness
+    where one mis-tuned weight starves a whole topic forever."""
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = scored[:TOP_K]
+    if len(top) == 1:
+        return top[0][1]
+    mx = top[0][0]
+    ws = [math.exp((sc - mx) / max(TEMPERATURE, 1e-6)) for sc, _ in top]
+    r = random.random() * sum(ws)
+    acc = 0.0
+    for (sc, cand), wt in zip(top, ws):
+        acc += wt
+        if r <= acc:
+            return cand
+    return top[-1][1]
+
+
+def _eligible(db: Session, enrollments: list[Enrollment], now: datetime, *,
+              respect_cooldown: bool, exclude_skill_ids: set, exclude_unit_ids: set,
+              effort: str | None) -> list[tuple]:
+    """The GUARDRAILS: drop anything off-limits this turn, return what's left.
+    no-repeat (exclude_skill_ids) + skip-leaves-the-topic (exclude_unit_ids) +
+    (when strict) a just-seen, not-yet-due skill is held back."""
+    out = []
+    for enr in enrollments:
+        ensure_skill_states(db, enr)
+        q = (select(Skill, SkillState)
+             .join(SkillState, SkillState.skill_id == Skill.id)
+             .where(SkillState.enrollment_id == enr.id))
+        if effort:
+            q = q.where(Skill.effort == effort)
+        for skill, st in db.execute(q).all():
+            if skill.id in exclude_skill_ids:
+                continue
+            if skill.unit_id and skill.unit_id in exclude_unit_ids:
+                continue
+            if respect_cooldown:
+                is_due = bool(st.due_at and st.due_at <= now)
+                h = _hours_since(st.last_seen_at, now)
+                if h is not None and h < (enr.repeat_cooldown_hours or 6.0) and not is_due:
+                    continue
+            out.append((skill, st, enr))
+    return out
 
 
 # --- skill selection -----------------------------------------------------------
@@ -91,43 +170,32 @@ def ensure_skill_states(db: Session, enrollment: Enrollment) -> None:
 
 
 def pick_skill(db: Session, enrollments: list[Enrollment], effort: str | None = None,
-               respect_cooldown: bool = True) -> tuple[Skill, SkillState, Enrollment] | None:
-    """Rank each enrollment's skills by ITS OWN strategy, take each winner,
-    then prefer due over not-due across enrollments.
+               respect_cooldown: bool = True, exclude_skill_ids=None,
+               exclude_unit_ids=None) -> tuple[Skill, SkillState, Enrollment] | None:
+    """Score every eligible skill, then softmax-sample from the top few.
 
-    Cooldown: a skill seen within the enrollment's repeat_cooldown_hours is
-    excluded (unless it is due for review). The scheduler respects this
-    strictly (returns None -> no nudge); the on-demand path falls back to the
-    best available so an explicit ask always gets a question."""
+    Guardrails first (see _eligible): no immediate repeat, skip leaves the topic,
+    and - when respect_cooldown - a just-seen, not-due skill is held back. The
+    scheduler asks strictly (returns None -> no nudge); the on-demand path relaxes
+    the cooldown, then the excludes, so an explicit ask always gets a question."""
     now = utcnow()
-    winners: list[tuple[Skill, SkillState, Enrollment]] = []
-    fallbacks: list[tuple[Skill, SkillState, Enrollment]] = []
-    for enr in enrollments:
-        ensure_skill_states(db, enr)
-        q = (
-            select(Skill, SkillState)
-            .join(SkillState, SkillState.skill_id == Skill.id)
-            .where(SkillState.enrollment_id == enr.id)
-        )
-        if effort:
-            q = q.where(Skill.effort == effort)
-        cands = [(s, st, enr) for s, st in db.execute(q).all()]
-        if not cands:
-            continue
-        strategy = SELECTION_STRATEGIES.get(
-            enr.selection_strategy, _due_then_weakest)
-        ranked = strategy(cands, now)
-        fallbacks.append(ranked[0])
-        cutoff = now - timedelta(hours=enr.repeat_cooldown_hours)
-        cooled = [c for c in ranked
-                  if _is_due(c[1], now) or not c[1].last_seen_at or c[1].last_seen_at <= cutoff]
-        if cooled:
-            winners.append(cooled[0])
-    pool = winners or ([] if respect_cooldown else fallbacks)
-    if not pool:
+    excl_s = set(exclude_skill_ids or [])
+    excl_u = set(exclude_unit_ids or [])
+    cands = _eligible(db, enrollments, now, respect_cooldown=respect_cooldown,
+                      exclude_skill_ids=excl_s, exclude_unit_ids=excl_u, effort=effort)
+    if not cands and respect_cooldown:
+        return None                                       # scheduler-strict: no nudge
+    if not cands:                                          # on-demand: relax the cooldown
+        cands = _eligible(db, enrollments, now, respect_cooldown=False,
+                          exclude_skill_ids=excl_s, exclude_unit_ids=excl_u, effort=effort)
+    if not cands:                                          # last resort: drop the excludes too
+        cands = _eligible(db, enrollments, now, respect_cooldown=False,
+                          exclude_skill_ids=set(), exclude_unit_ids=set(), effort=effort)
+    if not cands:
         return None
-    pool.sort(key=lambda c: (not _is_due(c[1], now), c[1].score))
-    return pool[0]
+    scored = [(_priority(s, st, enr, now, _weights(enr)), (s, st, enr))
+              for (s, st, enr) in cands]
+    return _sample_top_k(scored)
 
 
 # --- the two LLM-backed actions ----------------------------------------------
@@ -240,16 +308,98 @@ def pick_bank_question(db: Session, user_id: int, skill_id: int) -> Question | N
     return qs[0]
 
 
+def _recent_signal(db: Session, user_id: int) -> str | None:
+    """Is there a clear teaching inflection in the last few answers? This is the
+    ONLY thing that triggers an LLM steer; routine turns stay deterministic."""
+    recent = db.execute(
+        select(Attempt.verdict).where(
+            Attempt.user_id == user_id,
+            Attempt.verdict.in_(["correct", "partial", "wrong"]))
+        .order_by(Attempt.asked_at.desc()).limit(3)
+    ).scalars().all()
+    if len(recent) < 3:
+        return None
+    if sum(v in ("wrong", "partial") for v in recent) >= 2:
+        return "struggling"
+    if all(v == "correct" for v in recent):
+        return "mastering"
+    return None
+
+
+def _maybe_llm_resteer(db: Session, user: User, enrollments: list[Enrollment],
+                       effort, excl_s: set, excl_u: set):
+    """At an inflection point, let the LLM choose among the deterministic
+    candidates (step back vs advance). Bounded, validated, fully fallback-safe:
+    it can only ever return one of the skills the guardrails already allowed."""
+    signal = _recent_signal(db, user.id)
+    if not signal:
+        return None
+    now = utcnow()
+    cands = _eligible(db, enrollments, now, respect_cooldown=False,
+                      exclude_skill_ids=excl_s, exclude_unit_ids=excl_u, effort=effort)
+    if len(cands) < 2:
+        return None
+    top = sorted(((_priority(s, st, e, now, _weights(e)), (s, st, e)) for (s, st, e) in cands),
+                 key=lambda x: x[0], reverse=True)[:6]
+    menu = "\n".join(
+        f"- id={s.id} | {s.name} | mastery={st.score:.2f} | "
+        f"{'never tried' if st.attempts == 0 else str(st.attempts) + ' tries'}"
+        f"{' | watch: ' + st.note[:80] if st.note else ''}"
+        for _p, (s, st, e) in top)
+    profile = (user.profile_note or "(no profile yet)")[:600]
+    try:
+        out = llm.ask(
+            f"""You choose the next practice skill for a learner who is {signal}.
+Learner profile: {profile}
+Options (already filtered to sensible choices):
+{menu}
+
+If struggling, prefer a more foundational/easier skill they can win at.
+If mastering, prefer to advance or broaden. Pick exactly ONE id from the list.
+Reply on one line only: CHOICE: <id>""", max_tokens=60)
+    except Exception:
+        return None
+    m = re.search(r"CHOICE:\s*(\d+)", out or "")
+    if not m:
+        return None
+    chosen = int(m.group(1))
+    for _p, cand in top:
+        if cand[0].id == chosen:
+            return cand
+    return None
+
+
 def ask_question(db: Session, user: User, enrollments: list[Enrollment],
                  source: str, effort: str | None = None) -> Attempt | None:
-    """Pick a skill, then source the question per the enrollment's
-    question_source policy: bank_first (curated, fall back to generation),
-    bank_only (trusted set only), generate_only (always creative).
-    Scheduled asks respect the repeat cooldown; on-demand asks always deliver."""
+    """Pick a skill (focus-aware, guardrailed, LLM-steered at inflection points),
+    then source the question per the enrollment's question_source policy:
+    bank_first (curated, fall back to generation), bank_only (trusted set only),
+    generate_only (always creative). Scheduled asks respect the repeat cooldown."""
+    # FOCUS is a deterministic user choice that overrides interleave.
+    if user.focus_enrollment_id:
+        focused = [e for e in enrollments if e.id == user.focus_enrollment_id]
+        if focused:
+            enrollments = focused
+    # Guardrail inputs from the last attempt: never repeat it; a SKIP leaves the unit.
+    last = db.execute(
+        select(Attempt).where(Attempt.user_id == user.id)
+        .order_by(Attempt.asked_at.desc())
+    ).scalars().first()
+    excl_s, excl_u = set(), set()
+    if last and last.skill_id:
+        excl_s = {last.skill_id}
+        if last.verdict == "skipped":
+            sk = db.get(Skill, last.skill_id)
+            if sk and sk.unit_id:
+                excl_u = {sk.unit_id}
+
     picked = pick_skill(db, enrollments, effort=effort,
-                        respect_cooldown=(source == "scheduled"))
+                        respect_cooldown=(source == "scheduled"),
+                        exclude_skill_ids=excl_s, exclude_unit_ids=excl_u)
     if not picked:
         return None
+    # Routine turns stop here; only an inflection lets the LLM re-steer the choice.
+    picked = _maybe_llm_resteer(db, user, enrollments, effort, excl_s, excl_u) or picked
     skill, _state, enr = picked
 
     policy = enr.question_source
@@ -416,6 +566,7 @@ def _close_attempt(db: Session, attempt: Attempt, enr: Enrollment | None,
     attempt.answered_at = utcnow()
     attempt.messages.append(AttemptMessage(
         role="tutor", kind="feedback", content=feedback))
+    user = db.get(User, attempt.user_id)
     if attempt.skill_id and enr:
         st = db.execute(
             select(SkillState).where(
@@ -424,8 +575,13 @@ def _close_attempt(db: Session, attempt: Attempt, enr: Enrollment | None,
             )
         ).scalars().first()
         if st:
-            update_skill_state(st, verdict)
-    user = db.get(User, attempt.user_id)
+            update_skill_state(st, verdict)               # deterministic: the numbers
+            skill = db.get(Skill, attempt.skill_id)
+            if user and skill:                            # LLM: the per-skill memory note
+                try:
+                    maybe_update_skill_note(db, user, skill, st, verdict)
+                except Exception:
+                    pass
     if user:
         maybe_update_profile(db, user)
 

@@ -31,6 +31,9 @@ class UserUpdate(BaseModel):
     max_prompts_per_day: int | None = Field(None, ge=0, le=48)
     daily_goal: int | None = Field(None, ge=1, le=50)
     profile_note: str | None = None
+    # Focus mode: set to an enrollment id to lock practice to one course; send
+    # null to clear (interleave). A deterministic choice the engine must obey.
+    focus_enrollment_id: int | None = None
 
 
 class UserOut(ORM):
@@ -42,6 +45,7 @@ class UserOut(ORM):
     max_prompts_per_day: int
     daily_goal: int
     profile_note: str
+    focus_enrollment_id: int | None
     next_decision_at: datetime | None
 
 
