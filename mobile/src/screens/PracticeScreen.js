@@ -56,8 +56,15 @@ const MIC_OPTIONS = {
   },
 };
 
+// The three practice modes — what KIND of question you want now (not a skill lock).
+const MODES = [
+  ['on_the_go', '📱', 'On the go'],
+  ['short_drill', '✏️', 'Short drill'],
+  ['problem', '🧩', 'Problem'],
+];
+
 export default function PracticeScreen({ route, navigation }) {
-  const effort = route.params?.effort || null;
+  const routeMode = route.params?.mode || null;
   const attemptId = route.params?.attemptId || null;  // set = reopen a past conversation
   const [phase, setPhase] = useState('loading'); // loading | chat | error
   const [attempt, setAttempt] = useState(null);
@@ -69,7 +76,8 @@ export default function PracticeScreen({ route, navigation }) {
   const [dictated, setDictated] = useState(false);
   const [err, setErr] = useState('');
   const [prog, setProg] = useState(null);       // { done, target, streak }
-  const [mode, setMode] = useState(effort === 'deep' ? 'deep' : 'quick'); // sticky
+  const [mode, setMode] = useState(
+    MODES.some((m) => m[0] === routeMode) ? routeMode : 'short_drill'); // sticky
   const [photoSheet, setPhotoSheet] = useState(false);
   const scrollRef = useRef(null);
   // voice: wantMic = the user intends to keep dictating (cleared only by a
@@ -104,7 +112,7 @@ export default function PracticeScreen({ route, navigation }) {
       const { userId } = await getConfig();
       refreshProg(userId);
       let a = await api.openQuestion(userId);
-      if (!a) a = await api.newQuestion(userId, eff ? { effort: eff } : {});
+      if (!a) a = await api.newQuestion(userId, eff ? { mode: eff } : {});
       applyResponse(await api.chatMessages(userId, a.id));
       setPhase('chat');
     } catch (e) { setErr(e.message); setPhase('error'); }
@@ -112,7 +120,7 @@ export default function PracticeScreen({ route, navigation }) {
 
   // Entry point: reopen a specific past conversation, or start a fresh one.
   const start = useCallback(async () => {
-    if (!attemptId) return loadFresh(effort);
+    if (!attemptId) return loadFresh(routeMode);
     setPhase('loading'); setErr(''); setDraft('');
     try {
       const { userId } = await getConfig();
@@ -120,7 +128,7 @@ export default function PracticeScreen({ route, navigation }) {
       applyResponse(await api.chatMessages(userId, attemptId));
       setPhase('chat');
     } catch (e) { setErr(e.message); setPhase('error'); }
-  }, [attemptId, effort, loadFresh]);
+  }, [attemptId, routeMode, loadFresh]);
 
   useEffect(() => { start(); }, [start]);
 
@@ -295,7 +303,7 @@ export default function PracticeScreen({ route, navigation }) {
 
   return (
     <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      {/* session header: back · progress · sticky Quick/Deep toggle */}
+      {/* session header: back · progress */}
       <View style={s.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={10}>
           <Text style={s.backChevron}>‹</Text>
@@ -304,17 +312,19 @@ export default function PracticeScreen({ route, navigation }) {
           <View style={s.progTrack}><View style={[s.progFill, { width: `${pct}%` }]} /></View>
           <Text style={s.progTxt}>{prog ? `${Math.min(prog.done, prog.target)} / ${prog.target}` : ''}</Text>
         </View>
-        <View style={s.toggle}>
-          {[['quick', '⚡', 'Quick'], ['deep', '🧠', 'Deep']].map(([m, emo, lbl]) => {
-            const on = mode === m;
-            return (
-              <TouchableOpacity key={m} onPress={() => setMode(m)} style={[s.seg, on && s.segOn]} activeOpacity={0.8}>
-                <Text style={s.segEmo}>{emo}</Text>
-                <Text style={[s.segTxt, on && s.segTxtOn]}>{lbl}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+      </View>
+
+      {/* sticky mode toggle — what KIND of question you want right now */}
+      <View style={s.modeRow}>
+        {MODES.map(([m, emo, lbl]) => {
+          const on = mode === m;
+          return (
+            <TouchableOpacity key={m} onPress={() => setMode(m)} style={[s.modeSeg, on && s.modeSegOn]} activeOpacity={0.85}>
+              <Text style={s.segEmo}>{emo}</Text>
+              <Text style={[s.modeSegTxt, on && s.modeSegTxtOn]}>{lbl}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <View style={s.chipRow}>
@@ -460,12 +470,17 @@ const s = StyleSheet.create({
   progTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: colors.bgSoft, overflow: 'hidden' },
   progFill: { height: '100%', borderRadius: 3, backgroundColor: colors.primary },
   progTxt: { fontSize: 12, fontWeight: '800', color: colors.inkSoft, minWidth: 34, textAlign: 'right' },
-  toggle: { flexDirection: 'row', backgroundColor: colors.bgSoft, borderRadius: 11, padding: 3 },
-  seg: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 9, paddingVertical: 6, borderRadius: 8 },
-  segOn: { backgroundColor: colors.primary, ...shadow.sm },
-  segEmo: { fontSize: 12 },
-  segTxt: { fontSize: 11, fontWeight: '800', color: colors.inkSoft },
-  segTxtOn: { color: '#231a0a' },
+  segEmo: { fontSize: 13 },
+  // 3-way sticky mode toggle (full-width row under the header)
+  modeRow: { flexDirection: 'row', gap: 6, paddingHorizontal: 15, paddingTop: 6, paddingBottom: 2 },
+  modeSeg: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingVertical: 8, borderRadius: 11, backgroundColor: colors.bgSoft,
+    borderWidth: 1, borderColor: colors.line,
+  },
+  modeSegOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  modeSegTxt: { fontSize: 11.5, fontWeight: '800', color: colors.inkSoft },
+  modeSegTxtOn: { color: '#231a0a' },
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: pad, paddingTop: 6 },
   bubble: { maxWidth: '86%', borderRadius: radius.lg, padding: 12, marginVertical: 5 },
