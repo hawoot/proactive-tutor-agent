@@ -1,7 +1,7 @@
 // Home = the agent's plan, made visible. Streak + daily goal up top, ONE
 // hero action, then the timeline: what's coming, what just happened.
 import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, RefreshControl, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, StyleSheet, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, getConfig } from '../api';
 import { Btn, Card, Chip, Bar, ErrorText, EmptyState, SectionTitle, Mascot } from '../components';
@@ -27,18 +27,11 @@ export default function TodayScreen({ navigation }) {
 
   const practice = (effort) => navigation.navigate('Practice', { effort });
 
-  // Dismiss the waiting question (mastery untouched) then either start a new
-  // one of the chosen kind, or just clear it and stay here.
-  const skipOpenThen = (effort, go) => async () => {
+  // Dismiss the waiting question (mastery untouched) and refresh — one tap,
+  // no prompt. Start the next one from the hero or quick actions when ready.
+  const dismissOpen = async () => {
     try { const { userId } = await getConfig(); await api.skip(userId); } catch {}
-    if (go) navigation.navigate('Practice', { effort }); else load();
-  };
-  const dismissOpen = () => {
-    Alert.alert('Skip this question?', 'Remove it — what would you like instead?', [
-      { text: '⚡ Quick one', onPress: skipOpenThen('quick', true) },
-      { text: '🧠 Deep dive', onPress: skipOpenThen('deep', true) },
-      { text: 'Just remove it', onPress: skipOpenThen(null, false) },
-    ]);
+    load();
   };
 
   const goalDone = data && data.answered_today >= data.daily_goal;
@@ -54,7 +47,7 @@ export default function TodayScreen({ navigation }) {
 
       {data && (
         <>
-          {/* Nejma says hello */}
+          {/* Labib says hello */}
           <GreetingRow goalDone={goalDone} />
 
           {/* streak + daily goal */}
@@ -76,7 +69,7 @@ export default function TodayScreen({ navigation }) {
           {!data.has_active_enrollment ? (
             <Card tint={colors.blue}>
               <Text style={s.heroTitle}>👋 Welcome!</Text>
-              <Text style={type.body}>Pick a course and Nejma starts planning your practice.</Text>
+              <Text style={type.body}>Pick a course and Labib starts planning your practice.</Text>
               <Btn label="Browse courses" color="blue" onPress={() => navigation.navigate('Courses')} />
             </Card>
           ) : data.open_attempt ? (
@@ -102,8 +95,8 @@ export default function TodayScreen({ navigation }) {
               <Text style={s.heroTitle}>✅ All caught up</Text>
               <Text style={type.body}>
                 {data.next_nudge_at
-                  ? `Nejma plans to ping you around ${timeOfDay(data.next_nudge_at)}.`
-                  : 'Nejma will schedule the next nudge shortly.'}
+                  ? `Labib plans to ping you around ${timeOfDay(data.next_nudge_at)}.`
+                  : 'Labib will schedule the next nudge shortly.'}
               </Text>
               <Btn label="Practice anyway" kind="outline" onPress={() => practice(null)} />
             </Card>
@@ -126,7 +119,7 @@ export default function TodayScreen({ navigation }) {
           {data.next_nudge_at ? (
             <TimelineItem emoji="⏰" color={colors.blue}
               title={`Next nudge ~ ${timeOfDay(data.next_nudge_at)}`}
-              sub="Nejma decides then whether to ping you" />
+              sub="Labib decides then whether to ping you" />
           ) : null}
           {data.due_today > data.due_now ? (
             <TimelineItem emoji="📚" color={colors.orange}
@@ -167,8 +160,8 @@ export default function TodayScreen({ navigation }) {
 function GreetingRow({ goalDone }) {
   const g = greeting(new Date().getHours());
   const pose = goalDone ? 'celebrate' : g.pose;
-  const line = goalDone ? 'Tnejjem! Goal done ⭐' : g.line;
-  const sub = goalDone ? 'You said you couldn’t. Nejma disagreed. Extra is a bonus.' : g.sub;
+  const line = goalDone ? 'Goal done ⭐' : g.line;
+  const sub = goalDone ? 'Nice work — anything more today is a bonus.' : g.sub;
   return (
     <View style={s.greetRow}>
       <Mascot pose={pose} size={72} />

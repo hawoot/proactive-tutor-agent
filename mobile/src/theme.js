@@ -1,4 +1,5 @@
-// Nejma's design tokens: warm sand by day, night sky after dark.
+// Labib's design tokens — editorial & warm: a warm-sand day, a warm plum-black
+// night, with an amber-gold action colour throughout.
 // The scheme is resolved from the system ONCE at JS startup, before any
 // StyleSheet.create runs, so every baked style gets the right palette.
 // When the system theme flips mid-session, App.js reloads the JS bundle.
@@ -6,49 +7,49 @@ import { Appearance } from 'react-native';
 
 const light = {
   // brand
-  primary: '#E16B4C', primaryDark: '#C4543A',   // terracotta - the action colour
-  blue: '#2E8FA8', blueDark: '#24788E',         // Mediterranean blue
-  purple: '#9A6BB5', purpleDark: '#7E549A',     // plum
-  orange: '#E89A3C', orangeDark: '#C77E27',     // amber gold
+  primary: '#F2A62A', primaryDark: '#D6891A',   // amber-gold - the action colour
+  blue: '#3F94AE', blueDark: '#2E788F',         // Mediterranean blue
+  purple: '#A66FC8', purpleDark: '#8A55AC',     // plum
+  orange: '#E8763A', orangeDark: '#C75D27',     // warm terracotta-orange
   red: '#D9534F', redDark: '#B54440',
-  yellow: '#F4B942',
-  mascot: '#F4B942', mascotDark: '#C08A2D',     // Nejma's gold
+  yellow: '#F2A62A',
+  mascot: '#F0A861', mascotDark: '#D9883C',     // Labib's sandy fur
   // surfaces & text
-  bg: '#FBF7F0',           // warm sand
-  bgSoft: '#F3ECDF',
+  bg: '#FBF6EE',           // warm sand
+  bgSoft: '#F4ECDF',
   card: '#FFFFFF',
-  line: '#E9E0D1',
-  ink: '#33302A',
-  inkSoft: '#7C7468',
-  inkFaint: '#B3AA9B',
+  line: '#ECE2D1',
+  ink: '#2E2A24',
+  inkSoft: '#8C8475',
+  inkFaint: '#B6AD9C',
   // semantic
-  good: '#5FA866',
-  warn: '#E89A3C',
+  good: '#3FA06B',
+  warn: '#E8763A',
   bad: '#D9534F',
-  shared: '#2E8FA8',
-  personal: '#9A6BB5',
+  shared: '#3F94AE',
+  personal: '#A66FC8',
 };
 
 const dark = {
-  primary: '#E8795A', primaryDark: '#C05A3E',
-  blue: '#4FA3BC', blueDark: '#3A88A0',
-  purple: '#AC82C4', purpleDark: '#8F68A8',
-  orange: '#E8A34F', orangeDark: '#C58234',
-  red: '#E06661', redDark: '#B84B47',
-  yellow: '#F4B942',
-  mascot: '#F4B942', mascotDark: '#D9A53C',
-  bg: '#14161F',           // the night sky where Nejma shines
-  bgSoft: '#1B1E2B',
-  card: '#202433',
-  line: '#343950',
-  ink: '#EDEEF6',
-  inkSoft: '#9FA3B8',
-  inkFaint: '#5F6378',
-  good: '#6BB573',
-  warn: '#E8A34F',
-  bad: '#E06661',
-  shared: '#4FA3BC',
-  personal: '#AC82C4',
+  primary: '#F5B73F', primaryDark: '#D99A28',   // amber-gold on the night sky
+  blue: '#5FB6D0', blueDark: '#3F94AE',
+  purple: '#C68FE6', purpleDark: '#A66FC8',
+  orange: '#F0903F', orangeDark: '#D0762A',
+  red: '#E0563B', redDark: '#C13F28',
+  yellow: '#F5B73F',
+  mascot: '#F0A861', mascotDark: '#D9883C',
+  bg: '#17131D',           // warm plum-black - the night Labib glows against
+  bgSoft: '#1F1A28',
+  card: '#221C2B',
+  line: '#332B42',
+  ink: '#F3EFEA',
+  inkSoft: '#9890A6',
+  inkFaint: '#6B6478',
+  good: '#46C186',
+  warn: '#F0903F',
+  bad: '#E0563B',
+  shared: '#5FB6D0',
+  personal: '#C68FE6',
 };
 
 export const scheme = Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';

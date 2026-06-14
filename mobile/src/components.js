@@ -8,7 +8,7 @@ import {
 import { colors, radius, pad, type, shadow } from './theme';
 import { MASCOT } from './brand';
 
-// Phil himself. A slow idle bob - alive, never distracting.
+// Labib himself. A slow idle bob - alive, never distracting.
 export function Mascot({ pose = 'wave', size = 96, bob = true, style }) {
   const y = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -27,16 +27,19 @@ export function Mascot({ pose = 'wave', size = 96, bob = true, style }) {
   );
 }
 
+// [background, bottom-edge, text]. Amber/orange are light enough that they need
+// dark ink for legible text; the cooler colours keep white.
+const DARK_TXT = '#231a0a';
 const BTN_COLORS = {
-  primary: [colors.primary, colors.primaryDark],
-  blue: [colors.blue, colors.blueDark],
-  purple: [colors.purple, colors.purpleDark],
-  danger: [colors.red, colors.redDark],
-  orange: [colors.orange, colors.orangeDark],
+  primary: [colors.primary, colors.primaryDark, DARK_TXT],
+  blue: [colors.blue, colors.blueDark, '#fff'],
+  purple: [colors.purple, colors.purpleDark, '#fff'],
+  danger: [colors.red, colors.redDark, '#fff'],
+  orange: [colors.orange, colors.orangeDark, '#fff'],
 };
 
 export function Btn({ label, onPress, busy, color = 'primary', kind = 'solid', small }) {
-  const [bg, edge] = BTN_COLORS[color] || BTN_COLORS.primary;
+  const [bg, edge, txt] = BTN_COLORS[color] || BTN_COLORS.primary;
   if (kind === 'ghost') {
     return (
       <TouchableOpacity onPress={onPress} disabled={busy} style={s.ghostBtn}>
@@ -55,8 +58,8 @@ export function Btn({ label, onPress, busy, color = 'primary', kind = 'solid', s
           : { backgroundColor: bg, borderBottomWidth: 4, borderBottomColor: edge, ...shadow.sm },
       ]}
     >
-      {busy ? <ActivityIndicator color={outline ? colors.ink : '#fff'} /> : (
-        <Text style={[s.btnText, small && { fontSize: 14 }, outline && { color: colors.ink }]}>
+      {busy ? <ActivityIndicator color={outline ? colors.ink : txt} /> : (
+        <Text style={[s.btnText, { color: txt }, small && { fontSize: 14 }, outline && { color: colors.ink }]}>
           {label}
         </Text>
       )}

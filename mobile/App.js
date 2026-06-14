@@ -1,4 +1,4 @@
-// Nejma - mobile v3.1 (warm redesign with a face and a name).
+// Labib - mobile v3.1 (warm redesign with a face and a name).
 // Onboarding on first launch, then four tabs; Practice is a full-screen flow.
 import React, { useEffect, useState } from 'react';
 import { Text, View, ActivityIndicator, ScrollView, Appearance } from 'react-native';

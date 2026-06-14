@@ -144,7 +144,7 @@ export default function SettingsScreen() {
             <GoalSlider value={prefs.daily_goal} onChange={setPref('daily_goal')} />
           </Card>
 
-          <SectionTitle>When should Nejma nudge you?</SectionTitle>
+          <SectionTitle>When should Labib nudge you?</SectionTitle>
           <Card>
             <NudgeTimes times={times} onChange={setTimes} />
             <View style={s.stepperRow}>

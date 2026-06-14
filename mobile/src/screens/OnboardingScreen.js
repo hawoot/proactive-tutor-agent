@@ -75,7 +75,7 @@ export default function OnboardingScreen({ navigation }) {
 
       {step === 1 && (
         <>
-          <Text style={s.h1}>Connect to Nejma's server</Text>
+          <Text style={s.h1}>Connect to Labib's server</Text>
           <Text style={s.sub}>Ask whoever runs the backend for these two values.</Text>
           <ErrorText>{err}</ErrorText>
           <Card>
@@ -112,7 +112,7 @@ export default function OnboardingScreen({ navigation }) {
       {step === 3 && (
         <View style={s.center}>
           <Mascot pose="coach" size={130} />
-          <Text style={s.h1}>Let Nejma reach you</Text>
+          <Text style={s.h1}>Let Labib reach you</Text>
           <Text style={s.sub}>
             The proactive part: your phone reminds you to practise at the times
             you choose in Settings. Allow notifications so they can come through.

@@ -1,24 +1,31 @@
-// Practice = a mini-conversation about ONE question. Answer if you can;
-// say you're stuck and the tutor coaches without dumping the solution.
-// Answer by TYPING, by TALKING (on-device dictation), or by SNAPPING a photo
-// of your handwritten work (read by the vision model). A real answer gets
-// marked, closes the question, and moves your mastery.
+// Practice = one continuous session about ONE question at a time. Answer if you
+// can; ask Labib to walk you through it; or have him show the full solution.
+// Answer by TYPING, by TALKING (on-device dictation), or by SNAPPING a photo of
+// your handwritten work (read by the vision model). A real answer gets marked,
+// closes the question, and moves your mastery — then the next one flows right in.
+//
+// Design: the session has a header you can always read (back · progress · the
+// sticky Quick/Deep toggle Labib pre-set). Help is two buttons. Skip and Next
+// are one tap each. Nothing pops up — every choice lives in the themed UI.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, Alert, Image,
+  KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 import { api, getConfig } from '../api';
-import { Btn, Chip, ErrorText, EmptyState, Mascot } from '../components';
+import { Btn, Chip, ErrorText, EmptyState, Mascot, Sheet } from '../components';
 import { colors, pad, radius, type, shadow } from '../theme';
 import { VERDICTS } from '../labels';
 
-const QUICK_REPLIES = [
-  { label: '💡 Hint', text: 'Can you give me a small hint, not the answer?' },
-  { label: '🤔 I’m stuck', text: "I'm stuck - I don't know how to start." },
-  { label: '📖 Show me', text: 'Please show me the full solution and walk me through it.' },
+// The two ways to ask for help. "Walk me through it" is the encouraged path: it
+// opens with a small hint and guides only as much as needed.
+const HELP_REPLIES = [
+  { label: '🧭 Walk me through it', primary: true,
+    text: "I want to solve this myself — walk me through it step by step. Start with a small hint and let me try each step. Don't give me the full solution yet." },
+  { label: '👁 Show me the solution',
+    text: 'Please show me the full solution and walk me through it.' },
 ];
 
 // After marking, the conversation stays open - getting it right isn't the
@@ -41,7 +48,9 @@ export default function PracticeScreen({ route, navigation }) {
   const [listening, setListening] = useState(false);
   const [dictated, setDictated] = useState(false);
   const [err, setErr] = useState('');
-  const [goal, setGoal] = useState(null);
+  const [prog, setProg] = useState(null);       // { done, target, streak }
+  const [mode, setMode] = useState(effort === 'deep' ? 'deep' : 'quick'); // sticky
+  const [photoSheet, setPhotoSheet] = useState(false);
   const scrollRef = useRef(null);
 
   const applyResponse = (r) => {
@@ -50,11 +59,20 @@ export default function PracticeScreen({ route, navigation }) {
     setClosed(r.closed);
   };
 
-  // A fresh question: the open one if any, otherwise a new one of this effort.
+  // Daily progress drives the header strip + the verdict note. Cheap to refetch.
+  const refreshProg = async (userId) => {
+    try {
+      const t = await api.today(userId);
+      setProg({ done: t.answered_today, target: t.daily_goal, streak: t.streak_days });
+    } catch {}
+  };
+
+  // A fresh question of the current mode (the open one if any takes priority).
   const loadFresh = useCallback(async (eff) => {
-    setPhase('loading'); setErr(''); setGoal(null); setDraft('');
+    setPhase('loading'); setErr(''); setDraft('');
     try {
       const { userId } = await getConfig();
+      refreshProg(userId);
       let a = await api.openQuestion(userId);
       if (!a) a = await api.newQuestion(userId, eff ? { effort: eff } : {});
       applyResponse(await api.chatMessages(userId, a.id));
@@ -65,9 +83,10 @@ export default function PracticeScreen({ route, navigation }) {
   // Entry point: reopen a specific past conversation, or start a fresh one.
   const start = useCallback(async () => {
     if (!attemptId) return loadFresh(effort);
-    setPhase('loading'); setErr(''); setGoal(null); setDraft('');
+    setPhase('loading'); setErr(''); setDraft('');
     try {
       const { userId } = await getConfig();
+      refreshProg(userId);
       applyResponse(await api.chatMessages(userId, attemptId));
       setPhase('chat');
     } catch (e) { setErr(e.message); setPhase('error'); }
@@ -119,20 +138,16 @@ export default function PracticeScreen({ route, navigation }) {
       const { userId } = await getConfig();
       const r = await api.chat(userId, content, { attempt_id: attempt?.id, images, modality });
       applyResponse(r);
-      if (r.closed) {
-        try {
-          const t = await api.today(userId);
-          setGoal({ done: t.answered_today, target: t.daily_goal, streak: t.streak_days });
-        } catch {}
-      }
+      if (r.closed) refreshProg(userId);
     } catch (e) { setErr(e.message); }
     setThinking(false);
   };
 
   const send = (text) => sendMessage({ text: text ?? draft });
 
-  // --- camera / library: a photo of handwritten work ------------------------
+  // --- camera / library: a photo of handwritten work (themed sheet) ---------
   const pickImage = async (source) => {
+    setPhotoSheet(false);
     if (thinking) return;
     try {
       const opts = { quality: 0.4, base64: true, allowsEditing: true, mediaTypes: ['images'] };
@@ -151,38 +166,19 @@ export default function PracticeScreen({ route, navigation }) {
     } catch (e) { setErr(e.message); }
   };
 
-  const attachPhoto = () => {
+  // Skip the current question (mastery untouched) and flow straight into the
+  // next of the current mode. One tap, no prompt.
+  const skipNext = async () => {
     if (thinking) return;
-    Alert.alert('Photo of your work', 'Snap your handwritten working and Nejma will read it.', [
-      { text: '📷 Take photo', onPress: () => pickImage('camera') },
-      { text: '🖼  Choose from library', onPress: () => pickImage('library') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    try { const { userId } = await getConfig(); await api.skip(userId); }
+    catch (e) { setErr(e.message); }
+    loadFresh(mode);
   };
-
-  // Skip / next: always let you choose the KIND of the next question.
-  // `afterSkip` dismisses the current question first (mastery untouched).
-  const chooseNext = (afterSkip) => {
-    Alert.alert(
-      afterSkip ? 'Skip — what next?' : 'Another question',
-      'Pick the kind you want next.',
-      [
-        { text: '⚡ Quick one', onPress: () => goNext('quick', afterSkip) },
-        { text: '🧠 Deep dive', onPress: () => goNext('deep', afterSkip) },
-        { text: 'Cancel', style: 'cancel' },
-      ],
-    );
-  };
-  const goNext = async (kind, afterSkip) => {
-    if (afterSkip) {
-      try { const { userId } = await getConfig(); await api.skip(userId); }
-      catch (e) { setErr(e.message); }
-    }
-    loadFresh(kind);
-  };
+  // After a question closes, the next one flows in — same mode, one tap.
+  const nextQuestion = () => loadFresh(mode);
 
   if (phase === 'loading') {
-    return <View style={s.root}><EmptyState pose="think" title="Nejma is picking your question…" /></View>;
+    return <View style={s.root}><EmptyState pose="think" title="Labib is picking your question…" /></View>;
   }
   if (phase === 'error') {
     return (
@@ -200,14 +196,37 @@ export default function PracticeScreen({ route, navigation }) {
   const fbIdx = messages.findIndex((m) => m.kind === 'feedback');
   const preMessages = fbIdx >= 0 ? messages.slice(0, fbIdx + 1) : messages;
   const postMessages = fbIdx >= 0 ? messages.slice(fbIdx + 1) : [];
+  const pct = prog ? Math.min(100, Math.round(Math.min(prog.done, prog.target) / Math.max(prog.target, 1) * 100)) : 0;
 
   return (
     <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* session header: back · progress · sticky Quick/Deep toggle */}
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={10}>
+          <Text style={s.backChevron}>‹</Text>
+        </TouchableOpacity>
+        <View style={s.progWrap}>
+          <View style={s.progTrack}><View style={[s.progFill, { width: `${pct}%` }]} /></View>
+          <Text style={s.progTxt}>{prog ? `${Math.min(prog.done, prog.target)} / ${prog.target}` : ''}</Text>
+        </View>
+        <View style={s.toggle}>
+          {[['quick', '⚡', 'Quick'], ['deep', '🧠', 'Deep']].map(([m, emo, lbl]) => {
+            const on = mode === m;
+            return (
+              <TouchableOpacity key={m} onPress={() => setMode(m)} style={[s.seg, on && s.segOn]} activeOpacity={0.8}>
+                <Text style={s.segEmo}>{emo}</Text>
+                <Text style={[s.segTxt, on && s.segTxtOn]}>{lbl}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
       <View style={s.chipRow}>
         {attempt?.skill_name ? <Chip text={attempt.skill_name} color={colors.blue} /> : null}
         <Chip text={attempt?.from_bank ? 'curated' : 'AI-generated'}
           color={attempt?.from_bank ? colors.good : colors.purple} />
-        {attempt?.source === 'scheduled' ? <Chip text="from Nejma" color={colors.orange} /> : null}
+        {attempt?.source === 'scheduled' ? <Chip text="from Labib" color={colors.orange} /> : null}
       </View>
 
       <ScrollView ref={scrollRef} style={{ flex: 1 }}
@@ -220,11 +239,11 @@ export default function PracticeScreen({ route, navigation }) {
           <View style={[s.verdictBanner, { backgroundColor: verdict.color + '1A', borderColor: verdict.color }]}>
             <Mascot pose={verdict.pose} size={96} bob={false} />
             <Text style={[s.verdictText, { color: verdict.color }]}>{verdict.label}</Text>
-            {goal ? (
+            {prog ? (
               <Text style={s.goalNote}>
-                {goal.done >= goal.target
-                  ? `🎯 Daily goal complete · 🔥 ${goal.streak}-day streak`
-                  : `${goal.done} of ${goal.target} today · 🔥 ${goal.streak}-day streak`}
+                {prog.done >= prog.target
+                  ? `🎯 Daily goal complete · 🔥 ${prog.streak}-day streak`
+                  : `${prog.done} of ${prog.target} today · 🔥 ${prog.streak}-day streak`}
               </Text>
             ) : null}
             <Text style={s.followupHint}>Still unsure about anything? Keep asking below 👇</Text>
@@ -235,36 +254,47 @@ export default function PracticeScreen({ route, navigation }) {
         {thinking ? (
           <View style={[s.bubble, s.tutorBubble, { flexDirection: 'row', alignItems: 'center' }]}>
             <Mascot pose="think" size={28} bob={false} style={{ marginRight: 8 }} />
-            <Text style={s.thinking}>Nejma is thinking…</Text>
+            <Text style={s.thinking}>Labib is thinking…</Text>
           </View>
         ) : null}
 
         {closed ? (
           <>
-            <Btn label="Another question" onPress={() => chooseNext(false)} />
+            <Btn label="Next question  ›" onPress={nextQuestion} />
             <Btn label="Done for now" kind="outline" onPress={() => navigation.goBack()} />
           </>
         ) : null}
       </ScrollView>
 
       <View style={s.composer}>
-        <View style={s.quickRow}>
-          {(closed ? FOLLOWUP_REPLIES : QUICK_REPLIES).map((q) => (
-            <TouchableOpacity key={q.label} style={s.quickChip} onPress={() => send(q.text)}>
-              <Text style={s.quickText}>{q.label}</Text>
-            </TouchableOpacity>
-          ))}
-          {!closed && (
-            <TouchableOpacity style={s.quickChip} onPress={() => chooseNext(true)}>
-              <Text style={s.quickText}>⏭️ Skip → choose next</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        {closed ? (
+          <View style={s.quickRow}>
+            {FOLLOWUP_REPLIES.map((q) => (
+              <TouchableOpacity key={q.label} style={s.quickChip} onPress={() => send(q.text)}>
+                <Text style={s.quickText}>{q.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : (
+          // two help buttons — Walk me through it (primary) / Show me the solution
+          <View style={s.helpRow}>
+            {HELP_REPLIES.map((q) => (
+              <TouchableOpacity
+                key={q.label}
+                style={[s.helpBtn, q.primary && s.helpBtnPrimary]}
+                onPress={() => send(q.text)}
+                activeOpacity={0.85}
+              >
+                <Text style={[s.helpText, q.primary && s.helpTextPrimary]}>{q.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         <View style={s.inputBar}>
           {!closed && (
             <>
-              <TouchableOpacity style={s.iconBtn} onPress={attachPhoto} disabled={thinking}>
+              <TouchableOpacity style={s.iconBtn} onPress={() => setPhotoSheet(true)} disabled={thinking}>
                 <Text style={s.icon}>📷</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[s.iconBtn, listening && s.iconBtnLive]} onPress={toggleMic} disabled={thinking}>
@@ -285,7 +315,19 @@ export default function PracticeScreen({ route, navigation }) {
             <Text style={s.sendText}>➤</Text>
           </TouchableOpacity>
         </View>
+
+        {!closed ? (
+          <TouchableOpacity style={s.skipRow} onPress={skipNext} disabled={thinking} hitSlop={8}>
+            <Text style={s.skipText}>⏭  Skip — next one</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
+
+      <Sheet visible={photoSheet} title="Photo of your work" onClose={() => setPhotoSheet(false)}>
+        <Text style={[type.meta, { marginBottom: 12 }]}>Snap your handwritten working and Labib will read it.</Text>
+        <Btn label="📷  Take a photo" onPress={() => pickImage('camera')} />
+        <Btn label="🖼  Choose from library" kind="outline" onPress={() => pickImage('library')} />
+      </Sheet>
     </KeyboardAvoidingView>
   );
 }
@@ -315,7 +357,22 @@ function Bubble({ m }) {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: pad, paddingTop: 8 },
+  // session header
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4, gap: 10 },
+  backBtn: { width: 28, height: 32, alignItems: 'center', justifyContent: 'center' },
+  backChevron: { fontSize: 30, lineHeight: 32, color: colors.inkSoft, fontWeight: '700' },
+  progWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  progTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: colors.bgSoft, overflow: 'hidden' },
+  progFill: { height: '100%', borderRadius: 3, backgroundColor: colors.primary },
+  progTxt: { fontSize: 12, fontWeight: '800', color: colors.inkSoft, minWidth: 34, textAlign: 'right' },
+  toggle: { flexDirection: 'row', backgroundColor: colors.bgSoft, borderRadius: 11, padding: 3 },
+  seg: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 9, paddingVertical: 6, borderRadius: 8 },
+  segOn: { backgroundColor: colors.primary, ...shadow.sm },
+  segEmo: { fontSize: 12 },
+  segTxt: { fontSize: 11, fontWeight: '800', color: colors.inkSoft },
+  segTxtOn: { color: '#231a0a' },
+
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: pad, paddingTop: 6 },
   bubble: { maxWidth: '86%', borderRadius: radius.lg, padding: 12, marginVertical: 5 },
   tutorBubble: {
     alignSelf: 'flex-start', backgroundColor: colors.card,
@@ -326,9 +383,9 @@ const s = StyleSheet.create({
   },
   questionBubble: {
     backgroundColor: colors.card, maxWidth: '100%', alignSelf: 'stretch',
-    borderLeftWidth: 4, borderLeftColor: colors.blue,
+    borderLeftWidth: 4, borderLeftColor: colors.primary,
   },
-  questionLabel: { fontSize: 11, fontWeight: '800', color: colors.blueDark, marginBottom: 4, letterSpacing: 1 },
+  questionLabel: { fontSize: 11, fontWeight: '800', color: colors.primaryDark, marginBottom: 4, letterSpacing: 1 },
   bubbleText: { fontSize: 15.5, lineHeight: 22, color: colors.ink },
   photo: { width: 220, height: 165, borderRadius: radius.md, marginBottom: 6, backgroundColor: colors.bgSoft },
   tag: { fontSize: 11, color: colors.inkFaint, marginTop: 4, fontWeight: '700' },
@@ -342,6 +399,15 @@ const s = StyleSheet.create({
   composer: {
     backgroundColor: colors.bg, paddingHorizontal: 10, paddingTop: 8, paddingBottom: 10,
   },
+  // two help buttons
+  helpRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  helpBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 11, paddingHorizontal: 6,
+    borderRadius: radius.md, backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.line, ...shadow.sm,
+  },
+  helpBtnPrimary: { borderColor: colors.primary, backgroundColor: colors.primary + '1F' },
+  helpText: { fontSize: 12.5, fontWeight: '800', color: colors.ink },
+  helpTextPrimary: { color: colors.primaryDark },
   quickRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
   quickChip: {
     borderRadius: radius.pill, paddingHorizontal: 13, paddingVertical: 7,
@@ -366,5 +432,7 @@ const s = StyleSheet.create({
     width: 42, height: 42, alignItems: 'center', justifyContent: 'center',
     borderBottomWidth: 3, borderBottomColor: colors.primaryDark,
   },
-  sendText: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  sendText: { color: '#231a0a', fontSize: 18, fontWeight: '800' },
+  skipRow: { alignItems: 'center', paddingTop: 9, paddingBottom: 2 },
+  skipText: { fontSize: 12.5, fontWeight: '700', color: colors.inkSoft },
 });
