@@ -10,14 +10,6 @@ export const POLICY_LABELS = {
       generate_only: { label: 'Creative', hint: 'The AI writes a fresh question every time.' },
     },
   },
-  selection_strategy: {
-    title: 'What to practise next',
-    options: {
-      due_then_weakest: { label: 'Smart review', hint: 'Skills due for review first, then your weakest.' },
-      due_then_unseen: { label: 'Cover everything', hint: 'Reviews first, then skills you have never tried.' },
-      round_robin: { label: 'Rotate evenly', hint: 'Cycle through all skills in turn.' },
-    },
-  },
   marking_strictness: {
     title: 'Marking style',
     options: {
@@ -42,5 +34,3 @@ export const VERDICTS = {
   wrong: { label: 'Not yet — let’s fix that', emoji: '📖', color: colors.bad, pose: 'coach' },
   skipped: { label: 'Skipped', emoji: '⏭️', color: colors.inkFaint, pose: 'think' },
 };
-
-export const EFFORT_LABELS = { quick: '⚡ quick', deep: '🧠 deep' };
