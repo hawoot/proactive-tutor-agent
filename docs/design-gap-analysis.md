@@ -177,3 +177,58 @@ show up only at genuine wins.
 
 Which of the three directions (A / B / C) — or the recommended **C-base + warm fox**
 hybrid — should be turned into visual mockups to react to before any code is written?
+
+---
+
+## 7. Update — 2026-06-14 (decisions after first mockups)
+
+**Direction chosen:** **C, warmed** ("Bold & Editorial, warmed"). Next step = polish
+this direction before any code. Variants to lock: night/day (the app has both) and the
+accent colour (amber-gold recommended vs the original terracotta).
+
+### 7a. Kill the native pop-ups — make confirmations part of the themed flow
+The app currently uses the OS-native `Alert.alert` for several flows. These render as
+system dialogs that ignore the app's theme entirely — a major "off-brand / unpolished"
+tell, separate from the six in §1. Replace **all** of them with in-app, themed UI
+(the existing `Sheet` bottom-sheet component, themed action rows, or inline buttons —
+which is exactly how the mockups already render "Skip / choose next").
+
+Known offenders to replace:
+- `PracticeScreen.js` — `dismissOpen`/`chooseNext` ("Skip — what next?", "Another
+  question") and `attachPhoto` ("Photo of your work"). → themed bottom sheet or inline
+  action chips (mockups already show inline `Hint / I'm stuck / Show me` + a skip chip).
+- `TodayScreen.js` — `dismissOpen` ("Skip this question?"). → inline on the hero card.
+- `SettingsScreen.js` — any confirm/destructive `Alert.alert` (e.g. reset/seed). →
+  themed confirm sheet.
+Principle: **no OS dialog should appear in a normal flow.** Reserve native alerts only
+for true OS-permission denials. Confirmations, choices, and "what next?" are in-app.
+
+### 7b. Brand pivot — unify everything under **Labib (لبيب)**, the fennec
+Decision in progress (owner-led): drop the split `Tnejjem` (app) / `Nejma` (star
+mascot) identity and **unify the app name AND mascot as "Labib"** — the fennec fox.
+
+Why this is strong:
+- **Labib (لبيب) literally means "intelligent / wise / sagacious"** — on-the-nose
+  perfect for a tutoring app, in a way a star never was.
+- It **converges with this report's mascot recommendation (§2c)**: a fennec fox,
+  culturally rooted, "clever animal" archetype that reads sophisticated-not-childish.
+- **Distinctly Tunisian with built-in story & nostalgia:** Labib is the beloved fennec
+  mascot Tunisians grew up with (national environmental campaign, since ~1993). Instant
+  recognition and warmth for the home audience.
+- Unifying name = mascot is simpler and stronger branding than the Tnejjem/Nejma split,
+  and removes the "unfinished brand" open thread.
+
+**One real consideration to handle (flagged, not a blocker):**
+- The original Labib is a **state-associated national mascot** (Tunisia's environment
+  agency). The *name* and the *fennec idea* are fair to adopt, but we should **design an
+  ORIGINAL fennec character** (our own proportions, palette, expressions — as in the
+  mockups) rather than replicate the official Labib's specific design/livery. This both
+  avoids IP/likeness issues and lets us own a distinct brand asset. **Verify trademark
+  availability before any public app-store launch.**
+- Story shifts cleanly: *Labib, the wise desert fox who guides you to mastery.* The
+  "reach for the star / you can" sentiment can survive as a motif (the fox reaching a
+  star = your target grade) without needing the Tnejjem/Nejma names.
+
+**Implication:** a rename touches the app name, icon, and splash, which are baked into
+the native binary → this requires a **full EAS rebuild** (not an OTA update), per the
+project handoff. Worth doing once, alongside the redesign, not piecemeal.
