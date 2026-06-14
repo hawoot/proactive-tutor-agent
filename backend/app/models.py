@@ -141,6 +141,9 @@ class User(Base):
     max_prompts_per_day: Mapped[int] = mapped_column(Integer, default=config.DEFAULT_MAX_PROMPTS_PER_DAY)
     daily_goal: Mapped[int] = mapped_column(Integer, default=3)  # answered questions/day target
     profile_note: Mapped[str] = mapped_column(Text, default="")  # LLM-derived semantic memory
+    # Set = the user chose to FOCUS one enrollment; selection is locked to it (a
+    # deterministic user choice that overrides the default interleave). NULL = interleave.
+    focus_enrollment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     next_decision_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -244,6 +247,7 @@ class SkillState(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     interval_hours: Mapped[float] = mapped_column(Float, default=12.0)  # spaced repetition
+    note: Mapped[str] = mapped_column(Text, default="")  # per-skill LLM memory: recurring mistakes here
 
     enrollment: Mapped[Enrollment] = relationship(back_populates="skill_states")
     skill: Mapped[Skill] = relationship()

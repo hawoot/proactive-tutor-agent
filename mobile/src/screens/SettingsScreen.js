@@ -6,7 +6,7 @@ import { Text, ScrollView, StyleSheet, View, TouchableOpacity } from 'react-nati
 import { useFocusEffect } from '@react-navigation/native';
 import { api, getConfig, saveConfig } from '../api';
 import { ensurePermission, syncReminders, nextReminderAt, scheduledCount } from '../notifs';
-import { Btn, Card, Field, ErrorText, SectionTitle } from '../components';
+import { Btn, Card, Field, ErrorText, SectionTitle, Choice } from '../components';
 import { NudgeTimes, GoalSlider, TimezonePicker } from '../widgets';
 import { colors, pad, radius, type } from '../theme';
 
@@ -29,12 +29,16 @@ export default function SettingsScreen() {
   const [tzPickerOpen, setTzPickerOpen] = useState(false);
   const [prefsMsg, setPrefsMsg] = useState('');
   const [remCount, setRemCount] = useState(null);
+  const [enrollments, setEnrollments] = useState([]);
+  const [focusId, setFocusId] = useState(null);  // null = interleave (mix all courses)
   const [err, setErr] = useState('');
 
   const loadPrefs = useCallback(async () => {
     try {
       const { userId: uid } = await getConfig();
-      const [u, sched] = await Promise.all([api.getUser(uid), api.getSchedule(uid)]);
+      const [u, sched, enrs] = await Promise.all([
+        api.getUser(uid), api.getSchedule(uid), api.listEnrollments(uid),
+      ]);
       setPrefs({
         name: u.name,
         timezone: u.timezone,
@@ -42,6 +46,8 @@ export default function SettingsScreen() {
         daily_goal: u.daily_goal ?? 3,
       });
       setTimes(sched.length > 0 ? sched : DEFAULT_TIMES);
+      setEnrollments(enrs || []);
+      setFocusId(u.focus_enrollment_id ?? null);
     } catch { setPrefs(null); setTimes(null); }
   }, []);
 
@@ -111,6 +117,15 @@ export default function SettingsScreen() {
 
   const setPref = (k) => (v) => setPrefs((p) => ({ ...p, [k]: v }));
 
+  // Focus is a deterministic choice — persist it immediately, on its own.
+  const setFocus = async (val) => {
+    setFocusId(val);
+    try {
+      const { userId: uid } = await getConfig();
+      await api.updateUser(uid, { focus_enrollment_id: val });
+    } catch (e) { setErr(e.message); }
+  };
+
   return (
     <ScrollView style={s.root} contentContainerStyle={{ padding: pad, paddingBottom: 48 }}>
       <ErrorText>{err}</ErrorText>
@@ -143,6 +158,28 @@ export default function SettingsScreen() {
             </Text>
             <GoalSlider value={prefs.daily_goal} onChange={setPref('daily_goal')} />
           </Card>
+
+          {enrollments.length >= 1 && (
+            <>
+              <SectionTitle>Study focus</SectionTitle>
+              <Card>
+                <Text style={[type.meta, { marginBottom: 8 }]}>
+                  Mix all your courses, or lock practice to one. Your choice sticks until you change it.
+                </Text>
+                <Choice
+                  value={focusId}
+                  onChange={setFocus}
+                  options={[
+                    { value: null, label: '🔀 Mix all courses',
+                      hint: 'Interleave — Labib moves between courses by what needs work.' },
+                    ...enrollments.map((e) => ({
+                      value: e.id, label: `🎯 ${e.program_title || 'Course'}`,
+                      hint: 'Focus — practise only this course until you switch.' })),
+                  ]}
+                />
+              </Card>
+            </>
+          )}
 
           <SectionTitle>When should Labib nudge you?</SectionTitle>
           <Card>

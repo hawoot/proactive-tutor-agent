@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, delete as sa_delete
 from sqlalchemy.orm import Session
 from ..db import get_db
-from ..models import User, NudgeTime
+from ..models import User, NudgeTime, Enrollment
 from ..schemas import (
     UserCreate, UserUpdate, UserOut, ScheduleIn, NudgeTimeOut,
 )
@@ -41,7 +41,13 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
 @router.patch("/{user_id}", response_model=UserOut)
 def update_user(user_id: int, body: UserUpdate, db: Session = Depends(get_db)):
     user = get_user_or_404(db, user_id)
-    for field, value in body.model_dump(exclude_unset=True).items():
+    data = body.model_dump(exclude_unset=True)
+    # Focus must be one of the user's own enrollments (null = interleave).
+    if data.get("focus_enrollment_id") is not None:
+        enr = db.get(Enrollment, data["focus_enrollment_id"])
+        if not enr or enr.user_id != user_id:
+            raise HTTPException(400, "focus_enrollment_id must be one of your enrollments")
+    for field, value in data.items():
         setattr(user, field, value)
     db.commit()
     return user

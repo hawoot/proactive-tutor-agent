@@ -19,7 +19,7 @@ from datetime import timedelta
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from . import llm
-from .models import utcnow, User, Skill, Unit, Attempt
+from .models import utcnow, User, Skill, Unit, Attempt, SkillState, Enrollment
 
 SHARED_CHARS = 2000      # budget per section, keeps prompts bounded
 RECENT_ATTEMPTS = 5
@@ -55,6 +55,13 @@ class ContextRetriever:
         parts = []
         if user.profile_note:
             parts.append(f"Learner profile: {user.profile_note[:SHARED_CHARS]}")
+        note = self.db.execute(
+            select(SkillState.note)
+            .join(Enrollment, Enrollment.id == SkillState.enrollment_id)
+            .where(Enrollment.user_id == user.id, SkillState.skill_id == skill.id)
+        ).scalars().first()
+        if note:
+            parts.append(f"What this learner tends to trip on with this skill: {note}")
         recent = self.db.execute(
             select(Attempt)
             .where(Attempt.user_id == user.id, Attempt.skill_id == skill.id,
@@ -121,3 +128,33 @@ Recent marked answers:
 {history}""",
         max_tokens=250,
     )
+
+
+def maybe_update_skill_note(db: Session, user: User, skill: Skill,
+                            st: SkillState, verdict: str) -> None:
+    """Per-skill memory. After a miss, distil the SPECIFIC recurring thing the
+    learner trips on for THIS skill - so the next question and the coaching can
+    target it, and the engine knows where the floor is. Only runs on wrong/partial
+    (that's when there's a mistake worth remembering); a clean run leaves it."""
+    if verdict not in ("wrong", "partial"):
+        return
+    recent = db.execute(
+        select(Attempt).where(
+            Attempt.user_id == user.id, Attempt.skill_id == skill.id,
+            Attempt.verdict.in_(["correct", "partial", "wrong"]))
+        .order_by(Attempt.asked_at.desc()).limit(RECENT_ATTEMPTS)
+    ).scalars().all()
+    if not recent:
+        return
+    history = "\n".join(
+        f"- [{a.verdict}] Q: {a.question[:120]} | feedback: {a.feedback[:120]}"
+        for a in recent)
+    st.note = (llm.ask(
+        f"""In <=30 words, note the SPECIFIC recurring mistake or missing prerequisite
+this learner shows on the skill "{skill.name}" - what a tutor should watch for or
+shore up next time. If they now look solid, say so. No preamble.
+
+Recent attempts on this skill:
+{history}""",
+        max_tokens=120,
+    ) or "").strip()
