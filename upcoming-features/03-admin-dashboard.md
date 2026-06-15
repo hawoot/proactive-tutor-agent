@@ -3,7 +3,7 @@
 **Status:** queued (future). Not started.
 
 ## Motivation
-Content is data managed through the API (see `docs/DATA.md`), and increasingly the
+Content is data managed through the API (see `docs/BACKEND_API.md`), and increasingly the
 operator needs to *see* and *manage* it directly: browse the curriculum, add/edit/
 remove content, inspect the database, search users and their data, and read logs.
 Doing this by hand-crafting API calls doesn't scale. We want a **web admin app** that
@@ -12,7 +12,7 @@ sits on top of the existing API and is the human UI for all of it.
 ## What it does
 - **Content management:** browse Programs → Units → Skills → Questions; create, edit,
   delete; tag questions with mode/style; bulk-author. (All via the existing content
-  endpoints in `docs/DATA.md`.)
+  endpoints in `docs/BACKEND_API.md`.)
 - **Curriculum view:** the unit/skill tree, question counts, coverage by mode.
 - **Database / data view:** read-only views of the personal domain — users,
   enrollments, per-skill `SkillState` (mastery, due, notes), the `Attempt` log.

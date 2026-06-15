@@ -1,7 +1,7 @@
 """End-to-end smoke test over the whole API with the fake LLM provider.
 No network, no API key needed, and crucially NO seeded curriculum: content is
 created through the API, which is the ONLY way content is managed (see
-docs/DATA.md). Run from backend/:  python -m pytest tests/ -q
+docs/BACKEND_API.md). Run from backend/:  python -m pytest tests/ -q
 """
 import os
 import tempfile

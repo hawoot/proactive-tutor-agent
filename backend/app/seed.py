@@ -1,7 +1,7 @@
 """Bootstrap only - NO curriculum content.
 
 Curriculum content (programs, units, skills, questions) is DATA and lives in the
-database; it is created and managed exclusively through the API (see docs/DATA.md).
+database; it is created and managed exclusively through the API (see docs/BACKEND_API.md).
 Nothing is ever baked into code here. `seed()` just ensures a single user exists so
 a fresh backend is usable; everything else is added via the API. Idempotent."""
 from sqlalchemy import select
