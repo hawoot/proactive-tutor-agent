@@ -108,6 +108,11 @@ export const api = {
     call('GET', `/practice/messages?user_id=${uid}${attemptId ? `&attempt_id=${attemptId}` : ''}`),
   skip: (uid) => call('POST', `/practice/skip?user_id=${uid}`),
 
+  // temporary steers: pause / focus a topic or skill (set on the Course tab)
+  listOverrides: (uid) => call('GET', `/practice/overrides?user_id=${uid}`),
+  setOverride: (uid, body) => call('POST', '/practice/overrides', { user_id: uid, ...body }),
+  clearOverride: (uid, id) => call('DELETE', `/practice/overrides/${id}?user_id=${uid}`),
+
   // question bank
   listQuestions: (skillId) => call('GET', `/skills/${skillId}/questions`),
   createQuestion: (uid, q) => call('POST', `/questions?user_id=${uid}`, q),

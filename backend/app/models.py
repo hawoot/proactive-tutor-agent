@@ -301,6 +301,25 @@ class AttemptMessage(Base):
     attempt: Mapped[Attempt] = relationship(back_populates="messages")
 
 
+class PracticeOverride(Base):
+    """A temporary, time-boxed steer the learner sets on the Course tab:
+    PAUSE a topic/skill (hold it back) or FOCUS a topic/skill (practise only it).
+    The target is either a unit (the whole subsection, applied recursively to its
+    skills) or a single skill. It expires on its own at expires_at - nothing has
+    to clean it up; selection simply ignores rows whose time has passed."""
+    __tablename__ = "practice_overrides"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # pause | focus
+    unit_id: Mapped[int | None] = mapped_column(
+        ForeignKey("units.id", ondelete="CASCADE"), nullable=True)
+    skill_id: Mapped[int | None] = mapped_column(
+        ForeignKey("skills.id", ondelete="CASCADE"), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Note(Base):
     """A private annotation a user pins on shared (or own) content."""
     __tablename__ = "notes"

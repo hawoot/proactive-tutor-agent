@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from . import llm
 from .models import (
     utcnow, User, Enrollment, Skill, SkillState, Attempt, AttemptMessage, Question,
+    Unit, PracticeOverride,
 )
 from .retrieval import ContextRetriever, maybe_update_profile, maybe_update_skill_note
 
@@ -111,11 +112,13 @@ def _sample_top_k(scored: list[tuple[float, tuple]]) -> tuple:
 
 def _eligible(db: Session, enrollments: list[Enrollment], now: datetime, *,
               respect_cooldown: bool, exclude_skill_ids: set, exclude_unit_ids: set,
-              restrict_skill_ids: set | None = None) -> list[tuple]:
+              restrict_skill_ids: set | None = None, block_skill_ids: set | None = None) -> list[tuple]:
     """The GUARDRAILS: drop anything off-limits this turn, return what's left.
     no-repeat (exclude_skill_ids) + skip-leaves-the-topic (exclude_unit_ids) +
     (when strict) a just-seen, not-yet-due skill is held back +
-    (curated-only) restrict to skills that have a curated question of the mode."""
+    (curated-only / temporary focus) restrict to a skill set +
+    (temporary pause) block_skill_ids the learner has parked. Unlike the relaxable
+    excludes, restrict and block are HARD - they're never dropped on fallback."""
     out = []
     for enr in enrollments:
         ensure_skill_states(db, enr)
@@ -124,6 +127,8 @@ def _eligible(db: Session, enrollments: list[Enrollment], now: datetime, *,
              .where(SkillState.enrollment_id == enr.id))
         for skill, st in db.execute(q).all():
             if restrict_skill_ids is not None and skill.id not in restrict_skill_ids:
+                continue
+            if block_skill_ids and skill.id in block_skill_ids:
                 continue
             if skill.id in exclude_skill_ids:
                 continue
@@ -160,7 +165,7 @@ def ensure_skill_states(db: Session, enrollment: Enrollment) -> None:
 
 def pick_skill(db: Session, enrollments: list[Enrollment], respect_cooldown: bool = True,
                exclude_skill_ids=None, exclude_unit_ids=None,
-               restrict_skill_ids=None) -> tuple[Skill, SkillState, Enrollment] | None:
+               restrict_skill_ids=None, block_skill_ids=None) -> tuple[Skill, SkillState, Enrollment] | None:
     """Score every eligible skill, then softmax-sample from the top few.
 
     Guardrails first (see _eligible): no immediate repeat, skip leaves the topic,
@@ -171,19 +176,20 @@ def pick_skill(db: Session, enrollments: list[Enrollment], respect_cooldown: boo
     now = utcnow()
     excl_s = set(exclude_skill_ids or [])
     excl_u = set(exclude_unit_ids or [])
+    block = set(block_skill_ids or [])
     cands = _eligible(db, enrollments, now, respect_cooldown=respect_cooldown,
                       exclude_skill_ids=excl_s, exclude_unit_ids=excl_u,
-                      restrict_skill_ids=restrict_skill_ids)
+                      restrict_skill_ids=restrict_skill_ids, block_skill_ids=block)
     if not cands and respect_cooldown:
         return None                                       # scheduler-strict: no nudge
     if not cands:                                          # on-demand: relax the cooldown
         cands = _eligible(db, enrollments, now, respect_cooldown=False,
                           exclude_skill_ids=excl_s, exclude_unit_ids=excl_u,
-                          restrict_skill_ids=restrict_skill_ids)
-    if not cands:                                          # last resort: drop the excludes (keep curated restriction)
+                          restrict_skill_ids=restrict_skill_ids, block_skill_ids=block)
+    if not cands:                                          # last resort: drop the excludes (keep focus/pause)
         cands = _eligible(db, enrollments, now, respect_cooldown=False,
                           exclude_skill_ids=set(), exclude_unit_ids=set(),
-                          restrict_skill_ids=restrict_skill_ids)
+                          restrict_skill_ids=restrict_skill_ids, block_skill_ids=block)
     if not cands:
         return None
     # Break ties FAIRLY: candidates arrive in a fixed order (enrollment id, then
@@ -339,6 +345,47 @@ def _skills_with_curated(db: Session, enrollments: list[Enrollment],
     return {sid for (sid,) in db.execute(q)}
 
 
+# --- temporary learner steers: pause / focus a topic or skill (Course tab) -----
+
+def _unit_subtree_ids(db: Session, unit_id: int) -> set[int]:
+    """A unit and every unit nested beneath it - so a steer on a subsection
+    reaches the skills in its child sub-topics too."""
+    ids = {unit_id}
+    frontier = [unit_id]
+    while frontier:
+        children = db.execute(
+            select(Unit.id).where(Unit.parent_id.in_(frontier))
+        ).scalars().all()
+        fresh = [c for c in children if c not in ids]
+        ids.update(fresh)
+        frontier = fresh
+    return ids
+
+
+def _override_skill_ids(db: Session, ov: PracticeOverride) -> set:
+    if ov.skill_id:
+        return {ov.skill_id}
+    if ov.unit_id:
+        unit_ids = _unit_subtree_ids(db, ov.unit_id)
+        return {sid for (sid,) in db.execute(
+            select(Skill.id).where(Skill.unit_id.in_(unit_ids)))}
+    return set()
+
+
+def active_overrides(db: Session, user_id: int, now: datetime) -> tuple[set, set]:
+    """(paused_skill_ids, focused_skill_ids) from the user's unexpired steers.
+    Expired rows are ignored here (and pruned lazily by the API)."""
+    rows = db.execute(
+        select(PracticeOverride).where(
+            PracticeOverride.user_id == user_id,
+            PracticeOverride.expires_at > now)
+    ).scalars().all()
+    paused, focused = set(), set()
+    for ov in rows:
+        (paused if ov.kind == "pause" else focused).update(_override_skill_ids(db, ov))
+    return paused, focused
+
+
 def ask_question(db: Session, user: User, enrollments: list[Enrollment],
                  source: str, mode: str | None = None) -> Attempt | None:
     """Pick a skill (focus-aware, guardrailed, deterministic), then source a
@@ -370,9 +417,15 @@ def ask_question(db: Session, user: User, enrollments: list[Enrollment],
         restrict = _skills_with_curated(db, enrollments, mode) \
             or _skills_with_curated(db, enrollments, None)
 
+    # Temporary learner steers (Course tab): FOCUS restricts to its skills (and
+    # intersects with any curated restriction); PAUSE blocks its skills outright.
+    paused, focused = active_overrides(db, user.id, utcnow())
+    if focused:
+        restrict = focused if restrict is None else (restrict & focused)
+
     picked = pick_skill(db, enrollments, respect_cooldown=(source == "scheduled"),
                         exclude_skill_ids=excl_s, exclude_unit_ids=excl_u,
-                        restrict_skill_ids=restrict)
+                        restrict_skill_ids=restrict, block_skill_ids=paused)
     if not picked:
         return None
     skill, _state, enr = picked

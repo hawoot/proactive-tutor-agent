@@ -1,11 +1,14 @@
 """The learning loop: get a question, answer it, get marked."""
+from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .. import agent
 from ..db import get_db
-from ..models import Attempt, Enrollment
+from ..models import Attempt, Enrollment, PracticeOverride, Skill, Unit, utcnow
 from ..schemas import (
     QuestionRequest, AnswerRequest, AttemptOut, ChatRequest, ChatResponse, MessageOut,
+    OverrideCreate, OverrideOut,
 )
 from .users import get_user_or_404
 
@@ -130,5 +133,87 @@ def skip(user_id: int, db: Session = Depends(get_db)):
     if not attempt:
         return {"ok": True, "note": "nothing open"}
     attempt.verdict = "skipped"
+    db.commit()
+    return {"ok": True}
+
+
+# --- temporary steers: pause / focus a topic or skill (set on the Course tab) ----
+
+def _override_out(db: Session, ov: PracticeOverride) -> OverrideOut:
+    item = OverrideOut.model_validate(ov)
+    if ov.skill_id:
+        sk = db.get(Skill, ov.skill_id)
+        item.target_name = sk.name if sk else ""
+    elif ov.unit_id:
+        u = db.get(Unit, ov.unit_id)
+        item.target_name = u.title if u else ""
+    return item
+
+
+@router.get("/overrides", response_model=list[OverrideOut])
+def list_overrides(user_id: int, db: Session = Depends(get_db)):
+    """The learner's currently-active pause/focus steers. Expired rows are pruned
+    here so the list (and the engine) only ever see live ones."""
+    get_user_or_404(db, user_id)
+    now = utcnow()
+    expired = db.execute(
+        select(PracticeOverride).where(
+            PracticeOverride.user_id == user_id,
+            PracticeOverride.expires_at <= now)
+    ).scalars().all()
+    for ov in expired:
+        db.delete(ov)
+    rows = db.execute(
+        select(PracticeOverride).where(
+            PracticeOverride.user_id == user_id,
+            PracticeOverride.expires_at > now)
+        .order_by(PracticeOverride.expires_at)
+    ).scalars().all()
+    out = [_override_out(db, ov) for ov in rows]
+    db.commit()
+    return out
+
+
+@router.post("/overrides", response_model=OverrideOut)
+def set_override(body: OverrideCreate, db: Session = Depends(get_db)):
+    """Pause or focus a topic/skill for a while (default 1h). Setting a FOCUS
+    replaces any existing focus (only one exclusive focus at a time); pauses can
+    stack. Re-steering the same target just refreshes its timer."""
+    get_user_or_404(db, body.user_id)
+    if not body.unit_id and not body.skill_id:
+        raise HTTPException(400, "Steer a unit or a skill")
+    if body.unit_id and not db.get(Unit, body.unit_id):
+        raise HTTPException(404, "Unknown unit")
+    if body.skill_id and not db.get(Skill, body.skill_id):
+        raise HTTPException(404, "Unknown skill")
+
+    # Clear what this supersedes: a focus is exclusive (drop other focuses); and
+    # any prior steer on this exact target is replaced rather than duplicated.
+    existing = db.execute(
+        select(PracticeOverride).where(PracticeOverride.user_id == body.user_id)
+    ).scalars().all()
+    for ov in existing:
+        same_target = ov.unit_id == body.unit_id and ov.skill_id == body.skill_id
+        if same_target or (body.kind == "focus" and ov.kind == "focus"):
+            db.delete(ov)
+
+    ov = PracticeOverride(
+        user_id=body.user_id, kind=body.kind,
+        unit_id=body.unit_id, skill_id=body.skill_id,
+        expires_at=utcnow() + timedelta(hours=body.hours),
+    )
+    db.add(ov)
+    db.commit()
+    db.refresh(ov)
+    return _override_out(db, ov)
+
+
+@router.delete("/overrides/{override_id}")
+def clear_override(override_id: int, user_id: int, db: Session = Depends(get_db)):
+    """Lift a pause/focus early."""
+    ov = db.get(PracticeOverride, override_id)
+    if not ov or ov.user_id != user_id:
+        raise HTTPException(404, "Unknown override")
+    db.delete(ov)
     db.commit()
     return {"ok": True}

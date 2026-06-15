@@ -50,7 +50,14 @@ POST   /practice/answer             submit & mark          {user_id, text, attem
 POST   /practice/chat               talk: coach or mark    {user_id, text, modality (text|voice|photo), images?}
 GET    /practice/messages           the conversation
 POST   /practice/skip?user_id=      dismiss (mastery untouched)
+GET    /practice/overrides?user_id= active pause/focus steers (expired ones pruned)
+POST   /practice/overrides          steer a topic/skill    {user_id, kind (pause|focus), unit_id? | skill_id?, hours=1}
+DELETE /practice/overrides/{id}?user_id=   lift a steer early
 ```
+Temporary steers (set on the Course tab): **focus** restricts selection to a
+topic/skill (only one focus at a time); **pause** holds a topic/skill back. Both
+expire on their own after `hours` (default 1). A topic target applies to all its
+skills, recursively.
 
 ## Progress, home & meta
 ```
