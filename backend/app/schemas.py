@@ -252,6 +252,7 @@ class AttemptOut(ORM):
     asked_at: datetime
     answered_at: datetime | None
     skill_name: str = ""
+    program_title: str = ""  # which course this question is drawn from
     from_bank: bool = False  # True = curated bank question; False = LLM-generated
 
 

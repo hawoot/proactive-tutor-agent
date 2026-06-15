@@ -15,6 +15,7 @@ router = APIRouter(prefix="/practice", tags=["practice"])
 def _out(attempt: Attempt) -> AttemptOut:
     item = AttemptOut.model_validate(attempt)
     item.skill_name = attempt.skill.name if attempt.skill else ""
+    item.program_title = attempt.skill.program.title if attempt.skill and attempt.skill.program else ""
     item.from_bank = attempt.question_id is not None
     return item
 
