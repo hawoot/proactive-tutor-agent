@@ -10,8 +10,19 @@ import { api, getConfig } from '../api';
 import {
   Btn, Card, Chip, Bar, Field, Sheet, Choice, ErrorText, EmptyState, SectionTitle,
 } from '../components';
-import { colors, pad, type } from '../theme';
+import { colors, pad, type, utcDate } from '../theme';
 import { POLICY_LABELS } from '../labels';
+
+// "52m left" / "1h 5m left" for a temporary steer's expiry (naive UTC from API).
+function remaining(iso) {
+  const d = utcDate(iso);
+  const ms = d ? d.getTime() - Date.now() : 0;
+  if (ms <= 0) return 'expiring';
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return `${mins}m left`;
+  const h = Math.floor(mins / 60); const m = mins % 60;
+  return m ? `${h}h ${m}m left` : `${h}h left`;
+}
 
 export default function CourseScreen({ route, navigation }) {
   const programId = route.params.id;
@@ -22,6 +33,8 @@ export default function CourseScreen({ route, navigation }) {
   const [enrollment, setEnrollment] = useState(null);
   const [mastery, setMastery] = useState({});     // skill_id -> {score, attempts}
   const [notes, setNotes] = useState([]);
+  const [ovBySkill, setOvBySkill] = useState({}); // skill_id -> active override
+  const [ovByUnit, setOvByUnit] = useState({});   // unit_id  -> active override
   const [editMode, setEditMode] = useState(false);
   const [err, setErr] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -32,9 +45,9 @@ export default function CourseScreen({ route, navigation }) {
     try {
       const { userId: uid } = await getConfig();
       setUserId(uid);
-      const [programs, treeData, skills, enrollments, noteList, prog] = await Promise.all([
+      const [programs, treeData, skills, enrollments, noteList, prog, overrides] = await Promise.all([
         api.listPrograms(uid), api.programTree(programId), api.programSkills(programId),
-        api.listEnrollments(uid), api.listNotes(uid), api.progress(uid),
+        api.listEnrollments(uid), api.listNotes(uid), api.progress(uid), api.listOverrides(uid),
       ]);
       const p = programs.find((x) => x.id === programId);
       if (!p) { setErr('Course not found - was it deleted?'); return; }
@@ -50,6 +63,12 @@ export default function CourseScreen({ route, navigation }) {
       const m = {};
       (enrProgress?.skills || []).forEach((sk) => { m[sk.skill_id] = sk; });
       setMastery(m);
+      const bySkill = {}; const byUnit = {};
+      overrides.forEach((o) => {
+        if (o.skill_id) bySkill[o.skill_id] = o;
+        else if (o.unit_id) byUnit[o.unit_id] = o;
+      });
+      setOvBySkill(bySkill); setOvByUnit(byUnit);
     } catch (e) { setErr(e.message); }
   }, [programId]);
 
@@ -79,6 +98,11 @@ export default function CourseScreen({ route, navigation }) {
     { text: 'Cancel', style: 'cancel' },
     { text: 'Delete', style: 'destructive', onPress: fn },
   ]);
+
+  // Temporary steers: pause / focus a topic or skill for a while.
+  const openSteer = (kind, target) =>
+    setSheet({ type: 'override', kind, unit: target.unit || null, skill: target.skill || null });
+  const clearSteer = (ov) => act(() => api.clearOverride(userId, ov.id));
 
   if (!program) {
     return (
@@ -151,6 +175,7 @@ export default function CourseScreen({ route, navigation }) {
         {tree.map((node) => (
           <UnitAccordion key={node.id} node={node} depth={0} editMode={editMode}
             mastery={mastery} notes={notes} enrolled={!!enrollment}
+            ovBySkill={ovBySkill} ovByUnit={ovByUnit}
             onAction={(action, payload) => {
               if (action === 'note') setSheet({ type: 'note', unitId: payload.unit.id, note: payload.note });
               else if (action === 'editUnit') setSheet({ type: 'unit', unit: payload });
@@ -158,6 +183,8 @@ export default function CourseScreen({ route, navigation }) {
               else if (action === 'addSkill') setSheet({ type: 'skill', unitId: payload.id });
               else if (action === 'editSkill') setSheet({ type: 'skill', skill: payload });
               else if (action === 'bank') setSheet({ type: 'bank', skill: payload });
+              else if (action === 'steer') openSteer(payload.kind, payload.target);
+              else if (action === 'clearSteer') clearSteer(payload);
               else if (action === 'deleteUnit') confirmDelete('topic (and everything inside)', () => act(() => api.deleteUnit(payload.id, userId)));
               else if (action === 'deleteSkill') confirmDelete('skill', () => act(() => api.deleteSkill(payload.id, userId)));
             }}
@@ -165,6 +192,9 @@ export default function CourseScreen({ route, navigation }) {
         ))}
         {looseSkills.map((sk) => (
           <SkillRow key={sk.id} skill={sk} editMode={editMode} mastery={mastery[sk.id]}
+            enrolled={!!enrollment} override={ovBySkill[sk.id]}
+            onSteer={(kind) => openSteer(kind, { skill: sk })}
+            onClearSteer={() => clearSteer(ovBySkill[sk.id])}
             onEdit={() => setSheet({ type: 'skill', skill: sk })}
             onBank={() => setSheet({ type: 'bank', skill: sk })}
             onDelete={() => confirmDelete('skill', () => act(() => api.deleteSkill(sk.id, userId)))} />
@@ -191,16 +221,21 @@ export default function CourseScreen({ route, navigation }) {
         visible={sheet?.type === 'bank'} skill={sheet?.skill} userId={userId}
         onClose={() => { setSheet(null); load(); }}
       />
+      <OverrideSheet
+        visible={sheet?.type === 'override'} sheet={sheet} userId={userId}
+        onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }}
+      />
     </View>
   );
 }
 
 // --- tree pieces ------------------------------------------------------------
 
-function UnitAccordion({ node, depth, editMode, mastery, notes, enrolled, onAction }) {
+function UnitAccordion({ node, depth, editMode, mastery, notes, enrolled, ovBySkill, ovByUnit, onAction }) {
   const [open, setOpen] = useState(depth === 0);
   const myNote = notes.find((n) => n.unit_id === node.id);
   const skillCount = countSkills(node);
+  const unitOverride = ovByUnit[node.id];
   return (
     <View style={{ marginLeft: depth * 12 }}>
       <Card style={{ paddingVertical: 12 }}>
@@ -212,6 +247,11 @@ function UnitAccordion({ node, depth, editMode, mastery, notes, enrolled, onActi
         </TouchableOpacity>
         {open && node.content ? <Text style={s.unitContent}>{node.content}</Text> : null}
         {open && myNote ? <Text style={s.noteText}>📝 {myNote.body}</Text> : null}
+        {open && enrolled && !editMode ? (
+          <SteerRow override={unitOverride} what="topic"
+            onSteer={(kind) => onAction('steer', { kind, target: { unit: node } })}
+            onClear={() => onAction('clearSteer', unitOverride)} />
+        ) : null}
         {open && (
           <View style={s.linkRow}>
             <LinkBtn label={myNote ? 'edit my note' : '+ my note'}
@@ -226,6 +266,9 @@ function UnitAccordion({ node, depth, editMode, mastery, notes, enrolled, onActi
       {open && node.skills.map((sk) => (
         <View key={sk.id} style={{ marginLeft: 12 }}>
           <SkillRow skill={sk} editMode={editMode} mastery={mastery[sk.id]}
+            enrolled={enrolled} override={ovBySkill[sk.id]}
+            onSteer={(kind) => onAction('steer', { kind, target: { skill: sk } })}
+            onClearSteer={() => onAction('clearSteer', ovBySkill[sk.id])}
             onEdit={() => onAction('editSkill', sk)}
             onBank={() => onAction('bank', sk)}
             onDelete={() => onAction('deleteSkill', sk)} />
@@ -233,7 +276,8 @@ function UnitAccordion({ node, depth, editMode, mastery, notes, enrolled, onActi
       ))}
       {open && node.children.map((child) => (
         <UnitAccordion key={child.id} node={child} depth={depth + 1} editMode={editMode}
-          mastery={mastery} notes={notes} enrolled={enrolled} onAction={onAction} />
+          mastery={mastery} notes={notes} enrolled={enrolled}
+          ovBySkill={ovBySkill} ovByUnit={ovByUnit} onAction={onAction} />
       ))}
     </View>
   );
@@ -243,7 +287,7 @@ function countSkills(node) {
   return node.skills.length + node.children.reduce((acc, c) => acc + countSkills(c), 0);
 }
 
-function SkillRow({ skill, editMode, mastery, onEdit, onBank, onDelete }) {
+function SkillRow({ skill, editMode, mastery, enrolled, override, onSteer, onClearSteer, onEdit, onBank, onDelete }) {
   return (
     <Card style={{ paddingVertical: 10, marginVertical: 3 }}>
       <View style={s.unitHead}>
@@ -256,6 +300,9 @@ function SkillRow({ skill, editMode, mastery, onEdit, onBank, onDelete }) {
           <Text style={s.masteryPct}>{Math.round(mastery.score * 100)}%</Text>
         </View>
       ) : null}
+      {enrolled && !editMode ? (
+        <SteerRow override={override} what="skill" onSteer={onSteer} onClear={onClearSteer} />
+      ) : null}
       {editMode && (
         <View style={s.linkRow}>
           <LinkBtn label="edit" onPress={onEdit} />
@@ -264,6 +311,28 @@ function SkillRow({ skill, editMode, mastery, onEdit, onBank, onDelete }) {
         </View>
       )}
     </Card>
+  );
+}
+
+// The pause/focus control on a topic or skill: shows live state with a one-tap
+// "lift", or the two steer actions when nothing is active.
+function SteerRow({ override, what, onSteer, onClear }) {
+  if (override) {
+    const focusing = override.kind === 'focus';
+    return (
+      <View style={s.steerRow}>
+        <Text style={[s.steerChip, focusing ? s.steerFocus : s.steerPause]}>
+          {focusing ? '🎯 Focusing' : '⏸ Paused'} · {remaining(override.expires_at)}
+        </Text>
+        <LinkBtn label="lift" onPress={onClear} />
+      </View>
+    );
+  }
+  return (
+    <View style={s.steerRow}>
+      <LinkBtn label="🎯 Focus" onPress={() => onSteer('focus')} />
+      <LinkBtn label="⏸ Pause" onPress={() => onSteer('pause')} />
+    </View>
   );
 }
 
@@ -563,6 +632,53 @@ function QuestionBank({ visible, skill, userId, onClose }) {
   );
 }
 
+function OverrideSheet({ visible, sheet, userId, onClose, onSaved }) {
+  const isSkill = !!sheet?.skill;
+  const name = sheet?.skill?.name || sheet?.unit?.title || '';
+  const [kind, setKind] = useState('focus');
+  const [hours, setHours] = useState('1');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  React.useEffect(() => {
+    if (!visible) return;
+    setKind(sheet?.kind || 'focus'); setHours('1'); setErr('');
+  }, [visible, sheet]);
+
+  const save = async () => {
+    const h = parseFloat(hours);
+    if (!(h > 0)) { setErr('Enter a number of hours greater than 0.'); return; }
+    setBusy(true); setErr('');
+    try {
+      await api.setOverride(userId, {
+        kind, hours: h,
+        unit_id: sheet?.unit?.id || null,
+        skill_id: sheet?.skill?.id || null,
+      });
+      onSaved();
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  };
+
+  return (
+    <Sheet visible={visible} title={`Steer · ${name}`} onClose={onClose}>
+      <ErrorText>{err}</ErrorText>
+      <Text style={[type.meta, { marginBottom: 10 }]}>
+        Temporarily steer practice for this {isSkill ? 'skill' : 'topic'}. It lifts
+        automatically when the time's up — or tap “lift” to end it early.
+      </Text>
+      <Text style={[type.label, { marginBottom: 6 }]}>What to do</Text>
+      <Choice value={kind} onChange={setKind} options={[
+        { value: 'focus', label: '🎯 Focus only this', hint: 'Practise just this until it lifts.' },
+        { value: 'pause', label: '⏸ Pause this', hint: 'Hold it back; keep doing everything else.' },
+      ]} />
+      <Field label="For how long? (hours)" value={hours} onChangeText={setHours}
+        keyboardType="numeric" placeholder="1" hint="Defaults to 1 hour." />
+      <Btn label={kind === 'focus' ? 'Focus now' : 'Pause now'} onPress={save} busy={busy} />
+    </Sheet>
+  );
+}
+
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap' },
@@ -575,6 +691,13 @@ const s = StyleSheet.create({
   unitContent: { ...type.meta, marginTop: 8, lineHeight: 19 },
   noteText: { color: colors.purpleDark, marginTop: 8, lineHeight: 19, fontSize: 13.5 },
   linkRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
+  steerRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 8, gap: 6 },
+  steerChip: {
+    fontSize: 12, fontWeight: '800', overflow: 'hidden',
+    borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginRight: 6,
+  },
+  steerFocus: { color: colors.primaryDark, backgroundColor: colors.primary + '22' },
+  steerPause: { color: colors.inkSoft, backgroundColor: colors.line + '55' },
   skillName: { fontSize: 15, fontWeight: '600', color: colors.ink, flexShrink: 1, marginRight: 8 },
   masteryPct: { marginLeft: 8, fontSize: 12, fontWeight: '800', color: colors.inkSoft, width: 38, textAlign: 'right' },
   dangerRow: { flexDirection: 'row', gap: 10, marginTop: 10, justifyContent: 'space-between' },

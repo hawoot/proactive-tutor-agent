@@ -245,6 +245,7 @@ class AttemptOut(ORM):
     id: int
     skill_id: int | None
     source: str
+    mode: str = "short_drill"  # the KIND of question this attempt is
     question: str
     answer: str
     verdict: str
@@ -277,6 +278,28 @@ class ChatResponse(BaseModel):
     attempt: AttemptOut
     messages: list[MessageOut]
     closed: bool  # True once the answer has been marked
+
+
+# --- practice overrides (temporary pause / focus, set on the Course tab) ----------
+
+OverrideKind = Literal["pause", "focus"]
+
+
+class OverrideCreate(BaseModel):
+    user_id: int
+    kind: OverrideKind
+    unit_id: int | None = None          # target a whole subsection (recursively)
+    skill_id: int | None = None         # …or a single skill
+    hours: float = Field(1.0, gt=0, le=168)  # how long it lasts (default 1h)
+
+
+class OverrideOut(ORM):
+    id: int
+    kind: str
+    unit_id: int | None
+    skill_id: int | None
+    expires_at: datetime
+    target_name: str = ""               # unit title / skill name, for the UI
 
 
 # --- question bank ----------------------------------------------------------------

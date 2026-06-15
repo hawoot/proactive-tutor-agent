@@ -23,8 +23,9 @@ Managed **only through the API** (see `BACKEND_API.md`). Never baked into code.
 | `User` | name, timezone, quiet hours, daily_goal, profile_note, `focus_enrollment_id` | the learner + prefs |
 | `Enrollment` ← **bridge** | `user_id` ↔ `program_id`, exam_date, marking_strictness, question_style, question_source, repeat_cooldown_hours | the only link between the domains |
 | `SkillState` | `enrollment_id`, `skill_id`, score, attempts, due_at, interval, note | per-skill adaptive memory |
-| `Attempt` | `user_id`, `enrollment_id`, `skill_id`, `question_id`, question, answer, verdict, feedback | append-only event log |
+| `Attempt` | `user_id`, `enrollment_id`, `skill_id`, `question_id`, **`mode`**, question, answer, verdict, feedback | append-only event log |
 | `AttemptMessage` | `attempt_id`, role, kind, content, modality | the conversation about one question |
+| `PracticeOverride` | `user_id`, kind (`pause`\|`focus`), `unit_id`? \| `skill_id`?, `expires_at` | temporary, self-expiring steer set on the Course tab |
 | `Device` · `Note` · `NudgeTime` | — | delivery endpoints · private annotations · chosen reminder clock-times |
 
 **Dormant (slated for removal):** `NudgeWindow`, `NotificationLog` (the retired server-push outbox).
