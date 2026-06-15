@@ -11,7 +11,6 @@ Two clearly segregated domains, linked only through enrollments:
                                                  SkillState    per-skill adaptive memory
                                                  Attempt       append-only Q/A event log
                                                  Note          private annotation on content
-                                                 NotificationLog  every nudge sent
 
 Ownership rule (the whole personal-vs-shared story in one column):
   Program.owner_id IS NULL  -> shared library content, visible to everyone.
@@ -137,9 +136,6 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120), default="")
     timezone: Mapped[str] = mapped_column(String(60), default=config.DEFAULT_TIMEZONE)
-    quiet_hours_start: Mapped[int] = mapped_column(Integer, default=config.DEFAULT_QUIET_HOURS_START)
-    quiet_hours_end: Mapped[int] = mapped_column(Integer, default=config.DEFAULT_QUIET_HOURS_END)
-    max_prompts_per_day: Mapped[int] = mapped_column(Integer, default=config.DEFAULT_MAX_PROMPTS_PER_DAY)
     daily_goal: Mapped[int] = mapped_column(Integer, default=3)  # answered questions/day target
     profile_note: Mapped[str] = mapped_column(Text, default="")  # LLM-derived semantic memory
     # Set = the user chose to FOCUS one enrollment; selection is locked to it (a
@@ -156,8 +152,9 @@ class User(Base):
 
 class NudgeTime(Base):
     """When the tutor nudges: exact clock times the user picked, in their own
-    timezone (e.g. 11:00, 13:00, 17:00 on chosen weekdays). The scheduler fires
-    at each. No times defined = no scheduled nudges. This is the current model;
+    timezone (e.g. 11:00, 13:00, 17:00 on chosen weekdays). The device fires a
+    local notification at each. No times defined = no reminders. This is the
+    current model;
     NudgeWindow below is the retired 'allowed windows' shape, kept only so its
     table/migration history stays valid."""
     __tablename__ = "nudge_times"
@@ -335,21 +332,3 @@ class Note(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
-class NotificationLog(Base):
-    """DORMANT. Was the server-push outbox; reminders now fire on the device,
-    so nothing writes here anymore. Table kept (no destructive migration) in
-    case a server-side delivery channel (e.g. email digests) is added later."""
-    __tablename__ = "notification_log"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    device_id: Mapped[int | None] = mapped_column(
-        ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
-    channel: Mapped[str] = mapped_column(String(40), default="")
-    channel_ref: Mapped[str] = mapped_column(String(300), default="")
-    body: Mapped[str] = mapped_column(Text, default="")
-    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)  # queued | sent | failed
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
-    error: Mapped[str] = mapped_column(Text, default="")
-    sent_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)  # when queued (intent time - powers the cap)
-    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

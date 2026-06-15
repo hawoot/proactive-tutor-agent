@@ -1,5 +1,5 @@
-# Scaled-up layout for later: API and scheduler as separate containers,
-# Postgres instead of SQLite. Use when you outgrow the single service:
+# Scaled-up layout for later: Postgres instead of SQLite (and run more than one
+# API replica behind a load balancer). Use when you outgrow the single service:
 #   docker compose -f docker-compose.split.yml up -d --build
 services:
   api:
@@ -7,18 +7,8 @@ services:
     env_file: backend/.env
     environment:
       - DATABASE_URL=postgresql+psycopg://tutor:${POSTGRES_PASSWORD:-tutor}@db:5432/tutor
-      - SCHEDULER_MODE=off            # the scheduler service owns the loop
     ports:
       - "8000:8000"
-    depends_on: [db]
-    restart: unless-stopped
-
-  scheduler:                          # exactly one instance
-    build: ./backend
-    env_file: backend/.env
-    environment:
-      - DATABASE_URL=postgresql+psycopg://tutor:${POSTGRES_PASSWORD:-tutor}@db:5432/tutor
-    command: python -m app.scheduler
     depends_on: [db]
     restart: unless-stopped
 

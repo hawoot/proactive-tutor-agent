@@ -1,5 +1,5 @@
 """Deterministic offline provider: develop and smoke-test the whole loop
-(questions, marking, scheduler) without an API key or network access."""
+(questions, marking) without an API key or network access."""
 from .base import LLMProvider
 
 

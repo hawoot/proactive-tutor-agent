@@ -93,8 +93,9 @@ all learning progress.
 
 ## Notes for me (not the agent)
 
-- The whole backend is ONE process (API + embedded scheduler), managed by
-  `deploy/container.sh {start|stop|status|logs}`. PID file: `backend/tutor.pid`,
+- The whole backend is ONE process (the FastAPI API; reminders fire on the
+  device), managed by `deploy/container.sh {start|stop|status|logs}`.
+  PID file: `backend/tutor.pid`,
   log: `backend/tutor.log`.
 - If the container itself restarts, prompt B brings everything back.
 - When you move to a full machine later: install Docker, copy `backend/.env`

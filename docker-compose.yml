@@ -1,7 +1,8 @@
-# Option B (future full machine): one service, one process - API + embedded
-# scheduler. The DB lives in a named volume and survives rebuilds.
+# Option B (future full machine): one service, one process - the API.
+# (Reminders fire on the device.) The DB lives in a named volume and survives
+# rebuilds.
 #   docker compose up -d --build
-# Scaling further (separate scheduler, Postgres): docker-compose.split.yml
+# Scaling further (Postgres): docker-compose.split.yml
 services:
   tutor:
     build: ./backend

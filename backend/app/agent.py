@@ -171,8 +171,8 @@ def pick_skill(db: Session, enrollments: list[Enrollment], respect_cooldown: boo
     Guardrails first (see _eligible): no immediate repeat, skip leaves the topic,
     a just-seen not-due skill held back (when strict), and - in curated-only mode -
     only skills with a curated question of the requested mode (restrict_skill_ids).
-    The scheduler asks strictly (None -> no nudge); on-demand relaxes the cooldown,
-    then the excludes, so an explicit ask always gets a question."""
+    The proactive path asks strictly (None -> no question); on-demand relaxes the
+    cooldown, then the excludes, so an explicit ask always gets a question."""
     now = utcnow()
     excl_s = set(exclude_skill_ids or [])
     excl_u = set(exclude_unit_ids or [])
@@ -181,7 +181,7 @@ def pick_skill(db: Session, enrollments: list[Enrollment], respect_cooldown: boo
                       exclude_skill_ids=excl_s, exclude_unit_ids=excl_u,
                       restrict_skill_ids=restrict_skill_ids, block_skill_ids=block)
     if not cands and respect_cooldown:
-        return None                                       # scheduler-strict: no nudge
+        return None                                       # proactive-strict: no question
     if not cands:                                          # on-demand: relax the cooldown
         cands = _eligible(db, enrollments, now, respect_cooldown=False,
                           exclude_skill_ids=excl_s, exclude_unit_ids=excl_u,
@@ -293,7 +293,7 @@ Reply EXACTLY in this format:\nVERDICT: correct | partial | wrong\nFEEDBACK: <=3
     return verdict, feedback
 
 
-# --- the full ask/answer flows (shared by API and scheduler) -------------------
+# --- the full ask/answer flows (shared by on-demand and proactive asks) --------
 
 def active_enrollments(db: Session, user_id: int) -> list[Enrollment]:
     return list(db.execute(

@@ -11,8 +11,8 @@ engine = create_engine(
 )
 
 if _is_sqlite:
-    # WAL + busy timeout: safe concurrent access from the API and a separate
-    # scheduler process. Foreign keys are off by default in SQLite - turn on.
+    # WAL + busy timeout: safe concurrent access from multiple workers.
+    # Foreign keys are off by default in SQLite - turn on.
     from sqlalchemy import event
 
     @event.listens_for(engine, "connect")

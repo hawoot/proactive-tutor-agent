@@ -20,7 +20,7 @@ Managed **only through the API** (see `BACKEND_API.md`). Never baked into code.
 ## Personal — one learner's world
 | Table | Key columns | Notes |
 |---|---|---|
-| `User` | name, timezone, quiet hours, daily_goal, profile_note, `focus_enrollment_id` | the learner + prefs |
+| `User` | name, timezone, daily_goal, profile_note, `focus_enrollment_id` | the learner + prefs |
 | `Enrollment` ← **bridge** | `user_id` ↔ `program_id`, exam_date, marking_strictness, question_style, question_source, repeat_cooldown_hours | the only link between the domains |
 | `SkillState` | `enrollment_id`, `skill_id`, score, attempts, due_at, interval, note | per-skill adaptive memory |
 | `Attempt` | `user_id`, `enrollment_id`, `skill_id`, `question_id`, **`mode`**, question, answer, verdict, feedback | append-only event log |
@@ -28,7 +28,7 @@ Managed **only through the API** (see `BACKEND_API.md`). Never baked into code.
 | `PracticeOverride` | `user_id`, kind (`pause`\|`focus`), `unit_id`? \| `skill_id`?, `expires_at` | temporary, self-expiring steer set on the Course tab |
 | `Device` · `Note` · `NudgeTime` | — | delivery endpoints · private annotations · chosen reminder clock-times |
 
-**Dormant (slated for removal):** `NudgeWindow`, `NotificationLog` (the retired server-push outbox).
+**Dormant (slated for removal):** `NudgeWindow` (the retired 'allowed windows' shape, kept only so its migration history stays valid).
 
 ## Rules of thumb
 - Adding a skill to a program reaches every enrolled learner automatically

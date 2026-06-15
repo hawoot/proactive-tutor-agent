@@ -8,7 +8,7 @@ import { api, getConfig, saveConfig } from '../api';
 import { ensurePermission, syncReminders, nextReminderAt, scheduledCount } from '../notifs';
 import { Btn, Card, Field, ErrorText, SectionTitle, Choice } from '../components';
 import { NudgeTimes, GoalSlider, TimezonePicker } from '../widgets';
-import { colors, pad, radius, type } from '../theme';
+import { colors, pad, type } from '../theme';
 
 const fmtNext = (d) =>
   d ? d.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '';
@@ -43,7 +43,6 @@ export default function SettingsScreen() {
       setPrefs({
         name: u.name,
         timezone: u.timezone,
-        max_prompts_per_day: u.max_prompts_per_day,
         daily_goal: u.daily_goal ?? 3,
       });
       setTimes(sched.length > 0 ? sched : DEFAULT_TIMES);
@@ -106,7 +105,6 @@ export default function SettingsScreen() {
         api.updateUser(uid, {
           name: prefs.name,
           timezone: prefs.timezone,
-          max_prompts_per_day: prefs.max_prompts_per_day,
           daily_goal: Math.max(1, parseInt(prefs.daily_goal, 10) || 3),
         }),
         api.putSchedule(uid, list),
@@ -211,14 +209,6 @@ export default function SettingsScreen() {
           <SectionTitle>When should Labib nudge you?</SectionTitle>
           <Card>
             <NudgeTimes times={times} onChange={setTimes} />
-            <View style={s.stepperRow}>
-              <Text style={{ ...type.body, flex: 1 }}>Daily cap (safety limit)</Text>
-              <Stepper
-                value={prefs.max_prompts_per_day}
-                onChange={setPref('max_prompts_per_day')}
-                min={0} max={20}
-              />
-            </View>
             <TouchableOpacity style={s.tzButton} onPress={() => setTzPickerOpen(true)}>
               <Text style={type.body}>🌍 Timezone</Text>
               <Text style={s.tzValue}>{prefs.timezone.replace(/_/g, ' ')} ›</Text>
@@ -257,35 +247,9 @@ export default function SettingsScreen() {
   );
 }
 
-function Stepper({ value, onChange, min = 0, max = 99 }) {
-  const v = parseInt(value, 10) || 0;
-  return (
-    <View style={s.stepper}>
-      <TouchableOpacity style={s.stepBtn} onPress={() => v > min && onChange(v - 1)}>
-        <Text style={s.stepText}>−</Text>
-      </TouchableOpacity>
-      <Text style={s.stepValue}>{v}</Text>
-      <TouchableOpacity style={s.stepBtn} onPress={() => v < max && onChange(v + 1)}>
-        <Text style={s.stepText}>+</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   msg: { marginTop: 8, color: colors.ink, lineHeight: 20 },
-  stepperRow: {
-    flexDirection: 'row', alignItems: 'center', marginTop: 14,
-    paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.line,
-  },
-  stepper: {
-    flexDirection: 'row', alignItems: 'center', borderWidth: 2,
-    borderColor: colors.line, borderRadius: radius.pill, overflow: 'hidden',
-  },
-  stepBtn: { paddingHorizontal: 14, paddingVertical: 6 },
-  stepText: { fontSize: 18, fontWeight: '800', color: colors.blue },
-  stepValue: { fontSize: 16, fontWeight: '800', color: colors.ink, minWidth: 36, textAlign: 'center' },
   tzButton: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.line,

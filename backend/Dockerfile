@@ -6,5 +6,5 @@ COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini .
 EXPOSE 8000
-# Migrations run automatically on startup; scheduler runs embedded by default.
+# Migrations run automatically on startup. Reminders fire on the device.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

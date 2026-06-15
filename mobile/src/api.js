@@ -123,5 +123,4 @@ export const api = {
   today: (uid) => call('GET', `/today?user_id=${uid}`),
   progress: (uid) => call('GET', `/progress?user_id=${uid}`),
   attempts: (uid, limit = 30) => call('GET', `/attempts?user_id=${uid}&limit=${limit}`),
-  notifications: (uid) => call('GET', `/notifications?user_id=${uid}`),
 };

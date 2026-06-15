@@ -27,9 +27,6 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     name: str | None = None
     timezone: str | None = None
-    quiet_hours_start: int | None = Field(None, ge=0, le=23)
-    quiet_hours_end: int | None = Field(None, ge=0, le=23)
-    max_prompts_per_day: int | None = Field(None, ge=0, le=48)
     daily_goal: int | None = Field(None, ge=1, le=50)
     profile_note: str | None = None
     # Focus mode: set to an enrollment id to lock practice to one course; send
@@ -41,9 +38,6 @@ class UserOut(ORM):
     id: int
     name: str
     timezone: str
-    quiet_hours_start: int
-    quiet_hours_end: int
-    max_prompts_per_day: int
     daily_goal: int
     profile_note: str
     focus_enrollment_id: int | None
