@@ -108,6 +108,9 @@ export default function TodayScreen({ navigation }) {
               <TouchableOpacity style={s.quickBtn} onPress={() => practice('on_the_go')}>
                 <Text style={s.quickText}>📱 On the go</Text>
               </TouchableOpacity>
+              <TouchableOpacity style={s.quickBtn} onPress={() => practice('short_drill')}>
+                <Text style={s.quickText}>✏️ Drill</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={s.quickBtn} onPress={() => practice('problem')}>
                 <Text style={s.quickText}>🧩 Problem</Text>
               </TouchableOpacity>
@@ -208,12 +211,12 @@ const s = StyleSheet.create({
   goalText: { fontSize: 14, fontWeight: '700', color: colors.ink, marginBottom: 6 },
   heroTitle: { fontSize: 20, fontWeight: '800', color: colors.ink, marginBottom: 6, marginTop: 2 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap' },
-  quickRow: { flexDirection: 'row', gap: 10, marginTop: 2 },
+  quickRow: { flexDirection: 'row', gap: 8, marginTop: 2 },
   quickBtn: {
-    flex: 1, alignItems: 'center', paddingVertical: 10,
+    flex: 1, alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4,
     borderWidth: 2, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.card,
   },
-  quickText: { fontWeight: '700', color: colors.ink },
+  quickText: { fontWeight: '700', color: colors.ink, fontSize: 13 },
   tlRow: { flexDirection: 'row', marginBottom: 2 },
   tlRail: { alignItems: 'center', width: 44 },
   tlDot: {
