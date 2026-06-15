@@ -19,5 +19,7 @@ ideas survive across sessions (each chat is a fresh context and loses the rest).
 2. [`02-behavioral-signals.md`](02-behavioral-signals.md) — record behavioural
    signals (skip, "show me the solution", which help button) so the batch job can
    tell *struggling* from *bored*, and the report can ask the learner to confirm.
+3. [`03-admin-dashboard.md`](03-admin-dashboard.md) — a web admin app over the API
+   to manage content, view the database, search users/data, and read logs.
 
-> These two are related: #02 produces the signals that #01 consumes.
+> #01 and #02 are related: #02 produces the signals that #01 consumes.

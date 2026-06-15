@@ -235,11 +235,15 @@ export default function SettingsScreen() {
         </>
       )}
 
-      <SectionTitle>Demo</SectionTitle>
+      <SectionTitle>Setup</SectionTitle>
       <Card>
-        <Btn label="Seed demo course (A-level Maths)" kind="outline"
+        <Text style={[type.meta, { marginBottom: 8 }]}>
+          Creates your user on a fresh backend. Courses and content are added through the
+          API / admin, not here.
+        </Text>
+        <Btn label="Bootstrap my user" kind="outline"
           onPress={async () => {
-            try { setConnMsg(`Seed: ${JSON.stringify(await api.seed())}`); }
+            try { setConnMsg(`Setup: ${JSON.stringify(await api.seed())}`); }
             catch (e) { setErr(e.message); }
           }} />
       </Card>

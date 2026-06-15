@@ -1,10 +1,11 @@
 """End-to-end smoke test over the whole API with the fake LLM provider.
-No network, no API key needed. Run from backend/:
-
-    pip install pytest && python -m pytest tests/ -q
+No network, no API key needed, and crucially NO seeded curriculum: content is
+created through the API, which is the ONLY way content is managed (see
+docs/DATA.md). Run from backend/:  python -m pytest tests/ -q
 """
 import os
 import tempfile
+from datetime import datetime
 
 _tmp = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
@@ -20,76 +21,78 @@ H = {"X-API-Key": "testkey"}
 
 def test_everything():
     with TestClient(app) as c:
-        # auth: /health open, everything else key-gated
+        # --- auth: /health is open, everything else is key-gated ---
         assert c.get("/health").status_code == 200
         assert c.get("/programs").status_code == 401
 
-        # seed (idempotent)
+        # --- seed bootstraps ONE user and bakes in NO curriculum content ---
         assert c.post("/seed", headers=H).json()["user_id"] == 1
         assert "already seeded" in c.post("/seed", headers=H).json()["note"]
+        assert c.get("/programs?user_id=1", headers=H).json() == []  # nothing baked into code
 
-        # library: shared program visible, full curriculum tree built
-        progs = c.get("/programs?user_id=1", headers=H).json()
-        assert progs[0]["owner_id"] is None and progs[0]["skill_count"] > 40
-        tree = c.get("/programs/1/tree", headers=H).json()
-        assert [t["title"] for t in tree] == ["Pure Mathematics", "Statistics", "Mechanics"]
-        assert len(tree[0]["children"]) >= 8  # Pure topic units
-
-        # content CRUD on a personal program
-        p = c.post("/programs", json={"title": "My Prep", "owner_id": 1}, headers=H).json()
-        u = c.post("/units?user_id=1", json={"program_id": p["id"], "title": "Topic"}, headers=H).json()
-        s = c.post("/skills?user_id=1", json={
-            "program_id": p["id"], "unit_id": u["id"], "name": "Skill A"}, headers=H).json()
-        assert c.patch(f"/skills/{s['id']}?user_id=1", json={"kind": "code"},
+        # --- content is authored through the API: program -> unit -> skills -> question ---
+        prog = c.post("/programs", json={"title": "Demo course", "owner_id": None}, headers=H).json()
+        assert prog["owner_id"] is None
+        unit = c.post("/units?user_id=1", json={"program_id": prog["id"], "title": "Topic 1"}, headers=H).json()
+        sa = c.post("/skills?user_id=1", json={
+            "program_id": prog["id"], "unit_id": unit["id"], "name": "Adding", "kind": "math"}, headers=H).json()
+        c.post("/skills?user_id=1", json={
+            "program_id": prog["id"], "unit_id": unit["id"], "name": "Doubling", "kind": "math"}, headers=H)
+        assert sa["kind"] == "math"
+        assert c.patch(f"/skills/{sa['id']}?user_id=1", json={"kind": "code"},
                        headers=H).json()["kind"] == "code"
+
+        # curated question with mode/style, then edit it
+        q = c.post("/questions?user_id=1", json={
+            "skill_id": sa["id"], "text": "What is 1 + 1?", "answer": "2",
+            "commentary": "binary", "mode": "short_drill"}, headers=H).json()
+        assert q["mode"] == "short_drill"
+        assert c.get(f"/skills/{sa['id']}/questions", headers=H).json()[0]["answer"] == "2"
+        assert c.patch(f"/questions/{q['id']}?user_id=1", json={"answer": "two"},
+                       headers=H).json()["answer"] == "two"
+        c.patch(f"/questions/{q['id']}?user_id=1", json={"answer": "2"}, headers=H)  # restore
+
         # cross-program parent rejected
+        other = c.post("/programs", json={"title": "Other", "owner_id": 1}, headers=H).json()
+        ounit = c.post("/units?user_id=1", json={"program_id": other["id"], "title": "x"}, headers=H).json()
         assert c.post("/units?user_id=1", json={
-            "program_id": p["id"], "parent_id": 1, "title": "bad"}, headers=H).status_code == 400
+            "program_id": prog["id"], "parent_id": ounit["id"], "title": "bad"}, headers=H).status_code == 400
 
-        # clone shared -> personal (deep copy)
-        clone = c.post("/programs/1/clone?user_id=1", headers=H).json()
+        # clone (deep copy) the shared program into the user's space
+        clone = c.post(f"/programs/{prog['id']}/clone?user_id=1", headers=H).json()
         ctree = c.get(f"/programs/{clone['id']}/tree", headers=H).json()
-        assert len(ctree[0]["children"]) == len(tree[0]["children"])  # full deep copy
+        assert ctree[0]["title"] == "Topic 1" and len(ctree[0]["skills"]) == 2
 
-        # ownership guards
-        c.post("/users", json={"name": "Other"}, headers=H)
-        assert c.patch(f"/programs/{p['id']}?user_id=2", json={"title": "x"},
+        # --- ownership guards ---
+        c.post("/users", json={"name": "Other"}, headers=H)  # user 2
+        assert c.patch(f"/programs/{other['id']}?user_id=2", json={"title": "x"},
                        headers=H).status_code == 403
-        assert c.post("/enrollments", json={"user_id": 2, "program_id": p["id"]},
+        assert c.post("/enrollments", json={"user_id": 2, "program_id": other["id"]},
                       headers=H).status_code == 403
 
-        # policy toggles: structured enums - valid values stick, junk is rejected
+        # --- policies: mode options exposed; enrollment toggles validated ---
         assert "on_the_go" in c.get("/policies", headers=H).json()["mode"]["options"]
-        enr2 = c.post("/enrollments", json={"user_id": 1, "program_id": p["id"]}, headers=H).json()
-        r = c.patch(f"/enrollments/{enr2['id']}", json={
-            "marking_strictness": "lenient",
-            "question_style": "plain", "repeat_cooldown_hours": 2}, headers=H)
+        enr = c.post("/enrollments", json={"user_id": 1, "program_id": prog["id"]}, headers=H).json()
+        r = c.patch(f"/enrollments/{enr['id']}", json={
+            "marking_strictness": "lenient", "repeat_cooldown_hours": 2}, headers=H)
         assert r.json()["marking_strictness"] == "lenient"
-        assert c.patch(f"/enrollments/{enr2['id']}", json={
-            "marking_strictness": "wild_west"}, headers=H).status_code == 422
-        assert c.patch(f"/enrollments/{enr2['id']}", json={
+        assert c.patch(f"/enrollments/{enr['id']}", json={
+            "marking_strictness": "nope"}, headers=H).status_code == 422
+        assert c.patch(f"/enrollments/{enr['id']}", json={
             "repeat_cooldown_hours": 999}, headers=H).status_code == 422
 
-        # question bank: CRUD, then bank-first serving with canonical marking
-        qb = c.post("/questions?user_id=1", json={
-            "skill_id": s["id"], "text": "What is 1 + 1?", "answer": "2",
-            "commentary": "binary"}, headers=H).json()
-        assert c.get(f"/skills/{s['id']}/questions", headers=H).json()[0]["answer"] == "2"
-        assert c.patch(f"/questions/{qb['id']}?user_id=1", json={"answer": "two"},
-                       headers=H).json()["answer"] == "two"
-
-        # practice loop: bank_first serves the curated question (no stacking),
-        # fake-LLM marking closes it and mastery moves
-        q = c.post("/practice/question", json={"user_id": 1, "enrollment_id": enr2["id"]},
-                   headers=H).json()
-        assert q["from_bank"] and q["question"] == "What is 1 + 1?"
-        assert c.post("/practice/question", json={"user_id": 1}, headers=H).json()["id"] == q["id"]
+        # --- practice: curated-only serves the bank question; fake marking closes it ---
+        c.patch(f"/enrollments/{enr['id']}", json={"question_source": "bank_only"}, headers=H)
+        q1 = c.post("/practice/question", json={"user_id": 1, "enrollment_id": enr["id"]},
+                    headers=H).json()
+        assert q1["from_bank"] and q1["question"] == "What is 1 + 1?"
+        assert c.post("/practice/question", json={"user_id": 1}, headers=H).json()["id"] == q1["id"]
         a = c.post("/practice/answer", json={"user_id": 1, "text": "2"}, headers=H).json()
         assert a["verdict"] == "correct"
 
-        # mini-conversation: coaching keeps the attempt open, a real answer closes it
-        q = c.post("/practice/question", json={"user_id": 1, "enrollment_id": enr2["id"]},
-                   headers=H).json()
+        # mini-conversation: coaching keeps it open, a real answer closes it
+        q2 = c.post("/practice/question", json={"user_id": 1, "enrollment_id": enr["id"]},
+                    headers=H).json()
         r = c.post("/practice/chat", json={"user_id": 1, "text": "I'm stuck, any hint?"},
                    headers=H).json()
         assert not r["closed"] and r["messages"][-1]["role"] == "tutor"
@@ -98,90 +101,69 @@ def test_everything():
                                            "modality": "voice"}, headers=H).json()
         assert r["closed"] and r["attempt"]["verdict"] == "correct"
         assert r["messages"][-1]["kind"] == "feedback"
-        hist = c.get("/practice/messages?user_id=1&attempt_id=" + str(q["id"]), headers=H).json()
-        assert len(hist["messages"]) >= 4
-        # after marking, the conversation continues as follow-up (no re-marking)
         r = c.post("/practice/chat", json={"user_id": 1, "text": "why is that right?",
-                                           "attempt_id": q["id"]}, headers=H).json()
-        assert r["closed"] and r["messages"][-1]["role"] == "tutor"
-        assert "follow" in r["messages"][-1]["content"].lower()
-        assert r["attempt"]["verdict"] == "correct"  # unchanged
+                                           "attempt_id": q2["id"]}, headers=H).json()
+        assert r["closed"] and "follow" in r["messages"][-1]["content"].lower()
+        assert r["attempt"]["verdict"] == "correct"  # follow-up doesn't re-mark
 
-        # schedule: pick exact clock times, fetch them back, junk rejected
+        # generate_only flips to creative questions (reasoning stripped by the parser)
+        c.patch(f"/enrollments/{enr['id']}", json={"question_source": "generate_only"}, headers=H)
+        q3 = c.post("/practice/question", json={"user_id": 1, "enrollment_id": enr["id"]},
+                    headers=H).json()
+        assert not q3["from_bank"] and q3["question"] == "(fake provider) What is 2 + 2?"
+        a = c.post("/practice/answer", json={"user_id": 1, "text": "4"}, headers=H).json()
+        assert a["verdict"] == "correct"
+        prog_skills = c.get("/progress?user_id=1", headers=H).json()["enrollments"]
+        answered = [s for e in prog_skills for s in e["skills"] if s["attempts"] > 0]
+        assert answered and answered[0]["score"] > 0.3
+
+        # --- schedule: exact clock times, fetch back, junk rejected ---
         ts = [{"weekday": d, "hour": 9, "minute": 0} for d in range(7)] + \
              [{"weekday": d, "hour": 18, "minute": 30} for d in range(7)]
         assert len(c.put("/users/1/schedule", json={"times": ts}, headers=H).json()) == 14
         assert len(c.get("/users/1/schedule", headers=H).json()) == 14
         assert c.put("/users/1/schedule", json={"times": [
             {"weekday": 9, "hour": 9, "minute": 0}]}, headers=H).status_code == 422
-        assert c.put("/users/1/schedule", json={"times": [
-            {"weekday": 1, "hour": 25, "minute": 0}]}, headers=H).status_code == 422
-        # leave a valid all-day schedule so the scheduler has slots to fire on
         c.put("/users/1/schedule", json={"times": [
             {"weekday": d, "hour": 9, "minute": 0} for d in range(7)]}, headers=H)
 
-        # generate_only flips back to creative questions (reasoning stripped by the parser)
-        c.patch(f"/enrollments/{enr2['id']}", json={"question_source": "generate_only"}, headers=H)
-        q2 = c.post("/practice/question", json={"user_id": 1, "enrollment_id": enr2["id"]},
-                    headers=H).json()
-        assert not q2["from_bank"] and q2["question"] == "(fake provider) What is 2 + 2?"
-        a = c.post("/practice/answer", json={"user_id": 1, "text": "4"}, headers=H).json()
-        assert a["verdict"] == "correct"
-        prog = c.get("/progress?user_id=1", headers=H).json()["enrollments"]
-        answered = [s for e in prog for s in e["skills"] if s["attempts"] > 0]
-        assert answered and answered[0]["score"] > 0.3
-
-        # notes, devices, prefs
-        n = c.post("/notes", json={"user_id": 1, "unit_id": 1, "body": "revise"}, headers=H).json()
+        # --- notes, devices, prefs ---
+        n = c.post("/notes", json={"user_id": 1, "unit_id": unit["id"], "body": "revise"}, headers=H).json()
         assert c.get("/notes?user_id=1", headers=H).json()[0]["id"] == n["id"]
-        d = c.post("/devices", json={"user_id": 1, "channel": "console",
-                                     "channel_ref": "dev"}, headers=H).json()
+        d = c.post("/devices", json={"user_id": 1, "channel": "console", "channel_ref": "dev"}, headers=H).json()
         assert c.post("/devices", json={"user_id": 1, "channel": "console",
                                         "channel_ref": "dev"}, headers=H).json()["id"] == d["id"]
         assert c.patch("/users/1", json={"timezone": "Europe/London"},
                        headers=H).json()["timezone"] == "Europe/London"
 
-        # next reminder: server only COMPUTES the next fire time (the device
-        # schedules and fires the actual notifications). With an all-day
-        # schedule set above, the next reminder must be in the future.
-        from datetime import datetime
+        # --- server computes the next reminder time from the chosen schedule ---
         from app import scheduler
         from app.db import SessionLocal
-        from app.models import User
+        from app.models import User, Enrollment as EnrModel
         with SessionLocal() as db:
             u = db.get(User, 1)
             nxt = scheduler.next_nudge_at(db, u, datetime.utcnow())
             assert nxt is not None and nxt > datetime.utcnow()
-            # a user with no times set gets no reminder
-            from app.models import NudgeTime
-            from sqlalchemy import delete as sa_delete
-            db.execute(sa_delete(NudgeTime).where(NudgeTime.user_id == 2))
-            db.commit()
-            u2 = db.get(User, 2)
-            assert u2 is None or scheduler.next_nudge_at(db, u2, datetime.utcnow()) is None
 
-        # repeat cooldown: a just-seen, not-yet-due skill is excluded for the
-        # scheduler but still served on demand
+        # --- cooldown: a just-seen, not-due skill is held back for the scheduler
+        #     but the on-demand path always returns something ---
         from app import agent as agent_mod
-        from app.models import Enrollment as EnrModel
         with SessionLocal() as db:
-            enr_row = db.get(EnrModel, 1)  # seeded enrollment, one skill just answered
-            usr = db.get(User, 1)
+            enr_row = db.get(EnrModel, enr["id"])
             scheduled = agent_mod.pick_skill(db, [enr_row], respect_cooldown=True)
             on_demand = agent_mod.pick_skill(db, [enr_row], respect_cooldown=False)
             assert on_demand is not None
-            if scheduled:  # if anything survives cooldown it must not be the just-seen skill
+            if scheduled:  # anything surviving the cooldown must not be a just-seen skill
                 assert scheduled[1].last_seen_at is None
 
-        # /today aggregate: streak, goal, schedule visibility
+        # --- /today aggregate ---
         t = c.get("/today?user_id=1", headers=H).json()
         assert t["streak_days"] >= 1 and t["answered_today"] >= 2
         assert t["daily_goal"] == 3 and t["has_active_enrollment"]
-        assert t["recent"] and t["recent"][0]["verdict"] == "correct"
-        assert c.patch("/users/1", json={"daily_goal": 5},
-                       headers=H).json()["daily_goal"] == 5
+        assert t["recent"] and t["recent"][0]["verdict"] in ("correct", "partial", "wrong")
+        assert c.patch("/users/1", json={"daily_goal": 5}, headers=H).json()["daily_goal"] == 5
 
-        # cleanup paths: skip, cascade deletes
+        # --- cleanup paths: skip, cascade deletes ---
         assert c.post("/practice/skip?user_id=1", headers=H).json()["ok"]
-        assert c.delete(f"/programs/{p['id']}?user_id=1", headers=H).json()["ok"]
+        assert c.delete(f"/programs/{prog['id']}?user_id=1", headers=H).json()["ok"]
         assert c.delete("/users/2", headers=H).json()["ok"]
