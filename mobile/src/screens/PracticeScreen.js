@@ -136,6 +136,11 @@ export default function PracticeScreen({ route, navigation }) {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
   }, [messages, thinking]);
 
+  // Header shows the COURSE this question is drawn from (helps when interleaving).
+  useEffect(() => {
+    navigation.setOptions({ title: attempt?.program_title || 'Practice' });
+  }, [attempt?.program_title, navigation]);
+
   // Keep refs in step for the unmount save and append-on-dictate.
   useEffect(() => { draftRef.current = draft; }, [draft]);
   useEffect(() => { attemptIdRef.current = attempt?.id ?? null; }, [attempt?.id]);
