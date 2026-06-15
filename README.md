@@ -22,13 +22,12 @@ Two segregated domains, linked only through enrollments:
 
 ```
 CONTENT (shareable library)              PERSONAL (one learner's world)
-  Program  ── owner_id NULL = shared       User          prefs: timezone, quiet hours, caps
+  Program  ── owner_id NULL = shared       User          prefs: timezone, daily goal
     └── Unit (recursive tree, material)    Device        push token / telegram / console
     └── Skill (atomic, masterable)         Enrollment ── user <-> program + exam date
                                              └── SkillState  score, attempts, due_at (spaced rep)
                                            Attempt       append-only Q/A log
                                            Note          private annotation on shared content
-                                           NotificationLog  every nudge sent (powers daily cap)
 ```
 
 - **Personal vs shared in one column**: `Program.owner_id` NULL = in the library

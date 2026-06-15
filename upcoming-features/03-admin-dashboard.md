@@ -30,7 +30,7 @@ sits on top of the existing API and is the human UI for all of it.
 
 ## Hooks already in place
 - Full content CRUD already exists (`/programs`, `/units`, `/skills`, `/questions`).
-- `/today`, `/progress`, `/attempts`, `/notifications` already expose personal data.
+- `/today`, `/progress`, `/attempts` already expose personal data.
 - The two-domain schema (content vs personal) maps cleanly to dashboard sections.
 
 ## Open questions

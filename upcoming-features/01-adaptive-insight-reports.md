@@ -25,8 +25,8 @@ future server-side push channel something genuinely worth sending.
 ## Data-model additions (when built)
 - `Report` table: `id, user_id, period (daily|weekly), created_at, summary (text),
   payload (json: gaps[], improved[], questions_to_confirm[])`.
-- (Optional) a `Notification`/delivery table — purpose-built for this, **not** the
-  old `NotificationLog` (that was the deleted push-outbox; it's being removed).
+- (Optional) a `Notification`/delivery table — purpose-built for this. (The old
+  `NotificationLog` server-push outbox has been removed; reminders fire on the device.)
 
 ## API (when built)
 - `POST /reports/run?user_id=` — generate now (also callable by a future periodic job).

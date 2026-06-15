@@ -1,10 +1,10 @@
-"""Read models: mastery per skill, attempt history, nudge log."""
+"""Read models: mastery per skill, attempt history."""
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import (
-    Attempt, Enrollment, NotificationLog, Program, Skill, SkillState,
+    Attempt, Enrollment, Program, Skill, SkillState,
 )
 from ..schemas import AttemptOut
 
@@ -59,15 +59,3 @@ def attempts(user_id: int, limit: int = 50, db: Session = Depends(get_db)):
         item.from_bank = a.question_id is not None
         out.append(item)
     return out
-
-
-@router.get("/notifications")
-def notifications(user_id: int, limit: int = 50, db: Session = Depends(get_db)):
-    rows = db.execute(
-        select(NotificationLog).where(NotificationLog.user_id == user_id)
-        .order_by(NotificationLog.sent_at.desc()).limit(min(limit, 200))
-    ).scalars().all()
-    return {"notifications": [{
-        "id": n.id, "channel": n.channel, "body": n.body,
-        "status": n.status, "error": n.error, "sent_at": n.sent_at.isoformat(),
-    } for n in rows]}

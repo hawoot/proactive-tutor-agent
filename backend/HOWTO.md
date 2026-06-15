@@ -83,7 +83,7 @@ Interactive API docs: `http://SERVER_IP:8000/docs` - every endpoint, try-it-out.
 | content | `GET/POST/PATCH/DELETE /programs`, `/units`, `/skills`; `GET /programs/{id}/tree`; `POST /programs/{id}/clone` |
 | personal | `GET/POST/PATCH/DELETE /users`, `/devices`, `/notes`, `/enrollments` |
 | practice | `GET /practice/open`, `POST /practice/question`, `/practice/answer`, `/practice/skip` |
-| insight | `GET /progress`, `/attempts`, `/notifications` |
+| insight | `GET /progress`, `/attempts` |
 
 Shared content has `owner_id: null`; pass `?user_id=N` on reads to also see N's
 personal content, and on writes to prove ownership.

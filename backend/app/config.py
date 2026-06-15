@@ -39,6 +39,3 @@ API_KEY = os.environ.get("API_KEY", "")
 # Reminders are scheduled and fired on the device, so there is no server-side
 # scheduler to configure here.
 DEFAULT_TIMEZONE = os.environ.get("DEFAULT_TIMEZONE", "UTC")
-DEFAULT_QUIET_HOURS_START = int(os.environ.get("QUIET_HOURS_START", 21))
-DEFAULT_QUIET_HOURS_END = int(os.environ.get("QUIET_HOURS_END", 8))
-DEFAULT_MAX_PROMPTS_PER_DAY = int(os.environ.get("MAX_PROMPTS_PER_DAY", 4))
