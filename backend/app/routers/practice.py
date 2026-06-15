@@ -32,7 +32,7 @@ def open_question(user_id: int, db: Session = Depends(get_db)):
 
 @router.post("/question", response_model=AttemptOut)
 def new_question(body: QuestionRequest, db: Session = Depends(get_db)):
-    """Pull a question on demand (the scheduler does the same thing proactively)."""
+    """Pull a question on demand (the proactive path does the same thing)."""
     user = get_user_or_404(db, body.user_id)
     existing = agent.open_attempt(db, body.user_id)
     if existing:

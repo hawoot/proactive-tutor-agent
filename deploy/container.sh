@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Option A - deploy INSIDE a bare container (no Docker, no systemd available).
-# The whole backend is ONE process (API + embedded scheduler), so a venv and
-# nohup are all that's needed. Idempotent: re-run after every `git pull`.
+# The whole backend is ONE process (the FastAPI API; reminders fire on the
+# device), so a venv and nohup are all that's needed. Idempotent: re-run after
+# every `git pull`.
 #
 #   bash deploy/container.sh start    # install deps if needed, (re)start
 #   bash deploy/container.sh stop

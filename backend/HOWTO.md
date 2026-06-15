@@ -1,7 +1,9 @@
 # backend/HOWTO
 
-The backend is **one process**: FastAPI API + the proactive scheduler embedded
-in it. Migrations run automatically on startup. SQLite by default.
+The backend is **one process**: the FastAPI API. Migrations run automatically
+on startup. SQLite by default. Reminders fire ON THE DEVICE (local
+notifications at the user's chosen times) - there is no server scheduler; the
+server only computes the next reminder time for display.
 
 Pick your deployment:
 
@@ -35,7 +37,7 @@ bash deploy/container.sh start     # creates venv, installs deps, starts on :800
 Day-to-day:
 ```bash
 bash deploy/container.sh status    # is it up? (+ /health output)
-bash deploy/container.sh logs      # tail the log (scheduler nudges show here too)
+bash deploy/container.sh logs      # tail the log
 git pull && bash deploy/container.sh start    # update + restart
 bash deploy/container.sh stop
 ```
@@ -48,13 +50,13 @@ host gives you).
 ## Option B - full machine with Docker
 
 ```bash
-docker compose up -d --build       # one service: API + embedded scheduler
+docker compose up -d --build       # one service: the API
 docker compose logs -f             # watch it (nudges included)
 git pull && docker compose up -d --build    # update
 docker compose down                # stop (DB survives in the tutor-data volume)
 ```
 
-Scaling further (separate scheduler container + Postgres):
+Scaling further (Postgres, multiple API replicas):
 `docker-compose.split.yml` - add `psycopg[binary]>=3.1` to requirements.txt first.
 
 ## Smoke test (either path)
@@ -101,28 +103,32 @@ personal content, and on writes to prove ownership.
 
 ## Switching LLM provider (nothing baked in)
 
-In `backend/.env` - everything routes through `app/llm/`:
+In `backend/.env` - everything routes through `app/llm/`. `.env.example` has
+ready-to-uncomment blocks for OpenCode Zen "Go", OpenRouter, OpenAI, and
+Anthropic; pick one and drop in your key:
 ```ini
-LLM_PROVIDER=anthropic   # or: openai_compat (OpenAI, DeepSeek, Ollama...) | fake (offline dev)
+LLM_PROVIDER=anthropic   # or: openai_compat (OpenAI, OpenRouter, OpenCode, DeepSeek, Ollama...) | fake (offline dev)
 LLM_MODEL=claude-sonnet-4-6
 LLM_API_KEY=...
-LLM_BASE_URL=            # only for openai_compat, e.g. https://api.deepseek.com/v1
+LLM_BASE_URL=            # only for openai_compat, e.g. https://openrouter.ai/api/v1
 ```
 Then restart. `LLM_PROVIDER=fake` runs the full loop offline (canned questions) -
 useful for testing deployment before spending tokens.
 
-## How the scheduler decides (the moat - tune it)
+## How the agent picks the next question (the moat - tune it)
 
-Per due user, every `SCHEDULER_POLL_SECONDS`:
-1. **fence** (deterministic, per-user): quiet hours in the user's timezone,
-   max nudges/day (counted from `notification_log`), never stack on an open question.
-2. **decide**: pick across active enrollments - due-for-review first, else weakest.
-3. **phrase**: LLM writes ONE question for that skill (unit material as context).
-4. **notify**: all active devices; each send logged.
-5. **reschedule**: exam <=7 days away -> ~4h gaps; <=30 days -> ~12h; else daily.
+Reminders fire ON THE DEVICE: the app turns the user's chosen times into local
+OS notifications (offline, no push tokens). `app/reminders.py` only *computes*
+the next reminder time so the server can show it. When the learner opens the
+app it asks the API for a question, and the agent decides what to drill:
+1. **decide**: pick across active enrollments - due-for-review first, else weakest.
+2. **phrase**: LLM writes ONE question for that skill (unit material as context).
+3. **guardrails**: no immediate repeat; respect the per-skill cooldown unless
+   the skill is due (the on-demand path relaxes the cooldown so an explicit ask
+   always returns a question).
 
-Tuning lives in `app/scheduler.py` (cadence, fence) and `app/agent.py`
-(mastery EMA, spaced-repetition intervals).
+Tuning lives in `app/agent.py` (skill selection, mastery EMA,
+spaced-repetition intervals).
 
 ### Per-enrollment policy toggles (not hardcoded)
 
@@ -140,18 +146,10 @@ editor. Unknown values are rejected (422):
 Adding a strategy = one function + one registry entry in `app/agent.py`
 (`SELECTION_STRATEGIES`) + its name in `app/schemas.py`.
 
-### Notifications are an outbox (queue-ready)
-
-Deciding to nudge only INSERTs a `queued` row in `notification_log`;
-`notifier.dispatch_pending()` drains the queue with retries on each tick.
-Scaling later = run the dispatcher in its own worker process(es) or swap its
-internals for Redis/SQS - the scheduler and agent never change. Same story as
-SQLite -> Postgres: the swap point exists, use it when load demands.
-
 ## Tests
 
 ```bash
 cd backend && pip install pytest && python -m pytest tests/ -q
 ```
 Covers the full API: auth, CRUD, ownership guards, clone, practice loop (fake
-LLM), scheduler tick, cascade deletes. Runs on a throwaway DB, no network.
+LLM), next-reminder computation, cascade deletes. Runs on a throwaway DB, no network.

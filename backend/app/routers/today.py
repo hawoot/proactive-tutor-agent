@@ -1,5 +1,5 @@
 """GET /today - the single call behind the home-screen timeline: streak,
-daily goal, the open question, what the agent has scheduled, and recent
+daily goal, the open question, the next reminder time, and recent
 history. The agent's plan, made visible."""
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
@@ -9,7 +9,7 @@ from .. import agent
 from ..db import get_db
 from ..models import utcnow, Attempt, Enrollment, SkillState
 from ..schemas import AttemptOut
-from ..scheduler import next_nudge_at
+from ..reminders import next_nudge_at
 from .users import get_user_or_404
 
 router = APIRouter(tags=["today"])
@@ -84,7 +84,7 @@ def today(user_id: int, db: Session = Depends(get_db)):
     ).scalars().all()
 
     # Compute the next ping live from the user's chosen times, so it's always
-    # accurate (never a stale parked value) and matches the scheduler exactly.
+    # accurate (never a stale parked value) and matches what the device fires.
     nxt = next_nudge_at(db, user, now)
 
     return {

@@ -10,7 +10,6 @@ from datetime import datetime
 _tmp = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
 os.environ["LLM_PROVIDER"] = "fake"
-os.environ["SCHEDULER_MODE"] = "off"
 os.environ["API_KEY"] = "testkey"
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -137,16 +136,16 @@ def test_everything():
                        headers=H).json()["timezone"] == "Europe/London"
 
         # --- server computes the next reminder time from the chosen schedule ---
-        from app import scheduler
+        from app import reminders
         from app.db import SessionLocal
         from app.models import User, Enrollment as EnrModel
         with SessionLocal() as db:
             u = db.get(User, 1)
-            nxt = scheduler.next_nudge_at(db, u, datetime.utcnow())
+            nxt = reminders.next_nudge_at(db, u, datetime.utcnow())
             assert nxt is not None and nxt > datetime.utcnow()
 
-        # --- cooldown: a just-seen, not-due skill is held back for the scheduler
-        #     but the on-demand path always returns something ---
+        # --- cooldown: a just-seen, not-due skill is held back on the proactive
+        #     path but the on-demand path always returns something ---
         from app import agent as agent_mod
         with SessionLocal() as db:
             enr_row = db.get(EnrModel, enr["id"])

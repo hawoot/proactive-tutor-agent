@@ -1,13 +1,14 @@
 # Proactive Tutor Agent
 
 An exam-aware, **proactive** tutoring agent. The moat is not explanation (any LLM
-does that) - it is **scheduling: deciding when/whether/how to prompt the learner**,
-plus curated unit-tree material. The agent chases the learner.
+does that) - it is **deciding what to drill next** (due-for-review vs weakest,
+spaced repetition) over curated unit-tree material, surfaced through on-device
+reminders at the learner's chosen times. The agent chases the learner.
 
 ## Repo map
 
 ```
-backend/   FastAPI + SQLAlchemy + Alembic + scheduler + swappable LLM   -> backend/HOWTO.md
+backend/   FastAPI + SQLAlchemy + Alembic + swappable LLM   -> backend/HOWTO.md
 mobile/    Expo (React Native) app: practice, library CRUD, progress    -> mobile/HOWTO.md
 deploy/    container.sh (bare-container deploy) + AGENT_PROMPT.md
 ```
@@ -41,19 +42,20 @@ CONTENT (shareable library)              PERSONAL (one learner's world)
 
 ## Architecture in one breath
 
-- **Engine vs curriculum**: the engine (memory, scheduling, mastery, delivery) is
+- **Engine vs curriculum**: the engine (memory, selection, mastery) is
   invariant; a subject is just data (a `Program` + unit tree + skills).
 - **LLM vs state**: the LLM is a swappable brain behind `backend/app/llm/`
   (Anthropic, OpenAI-compatible, or `fake` for offline dev - one env switch). The
   tutor that "grows" is the accumulated state in the DB, never a process or model.
-- **Deterministic core, LLM at the edges**: the scheduler (ticker -> fence ->
-  decide -> phrase -> notify) is owned, tunable code; the LLM only phrases and marks.
-- **One process by default**: the scheduler runs embedded in the API process
-  (`SCHEDULER_MODE=embedded`), so the whole backend deploys as a single process -
-  perfect for a bare container. Flip to `off` + run `python -m app.scheduler`
-  when you split services later (see `docker-compose.split.yml`).
-- **Channel-agnostic**: nudges go through a `Notifier` interface (Console /
-  Telegram / Expo push) and every send is logged.
+- **Deterministic core, LLM at the edges**: skill selection (due -> weakest),
+  mastery and spaced repetition are owned, tunable code; the LLM only phrases
+  and marks.
+- **Reminders fire on the device**: the app schedules local notifications at the
+  learner's chosen times (offline, no push tokens, no server loop); the server
+  only computes the next reminder time for display (`app/reminders.py`).
+- **One process by default**: the backend is just the API, so it deploys as a
+  single process - perfect for a bare container (`docker-compose.split.yml` adds
+  Postgres and API replicas when you outgrow SQLite).
 
 ## Quick start (dev, no API key needed)
 

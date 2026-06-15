@@ -29,7 +29,7 @@ future server-side push channel something genuinely worth sending.
   old `NotificationLog` (that was the deleted push-outbox; it's being removed).
 
 ## API (when built)
-- `POST /reports/run?user_id=` — generate now (also callable by the scheduler).
+- `POST /reports/run?user_id=` — generate now (also callable by a future periodic job).
 - `GET /reports?user_id=` — list/most-recent, for an in-app "Your progress" view.
 
 ## Job logic (sketch)
@@ -44,8 +44,9 @@ future server-side push channel something genuinely worth sending.
 ## Hooks already in place (so this is additive, not a rebuild)
 - `Attempt` log is append-only and timestamped — the raw material.
 - `SkillState.note` + `User.profile_note` are already LLM-distilled summaries.
-- `scheduler` module is the natural home for the periodic runner (today it only
-  computes next-nudge-time; it's where an embedded daily/weekly loop belongs).
+- the `reminders` module is the natural home for a periodic runner (today it only
+  computes next-reminder-time; there is no server loop yet — this feature would
+  add the first one).
 - Personal content + lazy `ensure_skill_states` already lets a job add remedial
   skills that automatically reach the enrolled learner.
 - `User.next_decision_at` exists as the server-side-nudge hook.

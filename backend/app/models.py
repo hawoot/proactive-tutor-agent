@@ -156,8 +156,9 @@ class User(Base):
 
 class NudgeTime(Base):
     """When the tutor nudges: exact clock times the user picked, in their own
-    timezone (e.g. 11:00, 13:00, 17:00 on chosen weekdays). The scheduler fires
-    at each. No times defined = no scheduled nudges. This is the current model;
+    timezone (e.g. 11:00, 13:00, 17:00 on chosen weekdays). The device fires a
+    local notification at each. No times defined = no reminders. This is the
+    current model;
     NudgeWindow below is the retired 'allowed windows' shape, kept only so its
     table/migration history stays valid."""
     __tablename__ = "nudge_times"
