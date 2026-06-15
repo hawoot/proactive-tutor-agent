@@ -15,8 +15,8 @@ Switching A -> B later: copy `backend/tutor.db` and `backend/.env` over, done.
 ## First, on any path: configure
 
 ```bash
-git clone https://github.com/hawoot/proactive-tutor-agent.git
-cd proactive-tutor-agent
+git clone https://github.com/hawoot/proactive-tutor-agent.git /home/node/apps/labib-agent
+cd /home/node/apps/labib-agent
 cp backend/.env.example backend/.env
 nano backend/.env       # set LLM_API_KEY  and  API_KEY (openssl rand -hex 24)
 ```
