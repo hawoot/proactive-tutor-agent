@@ -4,9 +4,11 @@
 // your handwritten work (read by the vision model). A real answer gets marked,
 // closes the question, and moves your mastery — then the next one flows right in.
 //
-// Design: the session has a header you can always read (back · progress · the
-// sticky Quick/Deep toggle Labib pre-set). Help is two buttons. Skip and Next
-// are one tap each. Nothing pops up — every choice lives in the themed UI.
+// Design: a clean, uncluttered session — just a back affordance up top (no
+// stats), the question, and the conversation. The KIND of question (mode) is
+// chosen from a compact selector down by the composer, kept in sync with what's
+// on screen. Help is three buttons. Skip and Next are one tap each. Nothing
+// pops up — every choice lives in the themed UI.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet,
@@ -95,6 +97,8 @@ export default function PracticeScreen({ route, navigation }) {
     setAttempt(r.attempt);
     setMessages(r.messages);
     setClosed(r.closed);
+    // Keep the mode selector honest: show the KIND of question actually on screen.
+    if (r.attempt?.mode && MODES.some((m) => m[0] === r.attempt.mode)) setMode(r.attempt.mode);
   };
 
   // Daily progress drives the header strip + the verdict note. Cheap to refetch.
@@ -285,6 +289,19 @@ export default function PracticeScreen({ route, navigation }) {
   // After a question closes, the next one flows in — same mode, one tap.
   const nextQuestion = () => loadFresh(mode);
 
+  // Bottom mode selector: pick the KIND of question you want right now. Tapping a
+  // DIFFERENT mode while a question is open abandons it (like skip) and pulls a
+  // fresh one of that mode, so the selector always matches what's on screen.
+  const switchMode = async (m) => {
+    if (m === mode || thinking) return;
+    setMode(m);
+    if (closed) return;  // reading feedback — Next question will use the new mode
+    const leavingId = attempt?.id; if (leavingId) AsyncStorage.removeItem(`draft:${leavingId}`).catch(() => {});
+    try { const { userId } = await getConfig(); await api.skip(userId); }
+    catch (e) { setErr(e.message); }
+    loadFresh(m);
+  };
+
   if (phase === 'loading') {
     return <View style={s.root}><EmptyState pose="think" title="Labib is picking your question…" /></View>;
   }
@@ -304,32 +321,14 @@ export default function PracticeScreen({ route, navigation }) {
   const fbIdx = messages.findIndex((m) => m.kind === 'feedback');
   const preMessages = fbIdx >= 0 ? messages.slice(0, fbIdx + 1) : messages;
   const postMessages = fbIdx >= 0 ? messages.slice(fbIdx + 1) : [];
-  const pct = prog ? Math.min(100, Math.round(Math.min(prog.done, prog.target) / Math.max(prog.target, 1) * 100)) : 0;
 
   return (
     <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      {/* session header: back · progress */}
+      {/* session header: just a way back — no stats clutter */}
       <View style={s.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={10}>
           <Text style={s.backChevron}>‹</Text>
         </TouchableOpacity>
-        <View style={s.progWrap}>
-          <View style={s.progTrack}><View style={[s.progFill, { width: `${pct}%` }]} /></View>
-          <Text style={s.progTxt}>{prog ? `${Math.min(prog.done, prog.target)} / ${prog.target}` : ''}</Text>
-        </View>
-      </View>
-
-      {/* sticky mode toggle — what KIND of question you want right now */}
-      <View style={s.modeRow}>
-        {MODES.map(([m, emo, lbl]) => {
-          const on = mode === m;
-          return (
-            <TouchableOpacity key={m} onPress={() => setMode(m)} style={[s.modeSeg, on && s.modeSegOn]} activeOpacity={0.85}>
-              <Text style={s.segEmo}>{emo}</Text>
-              <Text style={[s.modeSegTxt, on && s.modeSegTxtOn]}>{lbl}</Text>
-            </TouchableOpacity>
-          );
-        })}
       </View>
 
       <View style={s.chipRow}>
@@ -427,9 +426,25 @@ export default function PracticeScreen({ route, navigation }) {
         </View>
 
         {!closed ? (
-          <TouchableOpacity style={s.skipRow} onPress={skipNext} disabled={thinking} hitSlop={8}>
-            <Text style={s.skipText}>⏭  Skip — next one</Text>
-          </TouchableOpacity>
+          <>
+            {/* mode selector — pick the KIND of question you want, in sync with
+                what's on screen. Lives down here by skip, not up top. */}
+            <View style={s.modeRow}>
+              {MODES.map(([m, emo, lbl]) => {
+                const on = mode === m;
+                return (
+                  <TouchableOpacity key={m} onPress={() => switchMode(m)}
+                    style={[s.modeSeg, on && s.modeSegOn]} activeOpacity={0.85} disabled={thinking}>
+                    <Text style={s.segEmo}>{emo}</Text>
+                    <Text style={[s.modeSegTxt, on && s.modeSegTxtOn]}>{lbl}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity style={s.skipRow} onPress={skipNext} disabled={thinking} hitSlop={8}>
+              <Text style={s.skipText}>⏭  Skip — next one</Text>
+            </TouchableOpacity>
+          </>
         ) : null}
       </View>
 
@@ -468,16 +483,12 @@ function Bubble({ m }) {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   // session header
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4, gap: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4 },
   backBtn: { width: 28, height: 32, alignItems: 'center', justifyContent: 'center' },
   backChevron: { fontSize: 30, lineHeight: 32, color: colors.inkSoft, fontWeight: '700' },
-  progWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  progTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: colors.bgSoft, overflow: 'hidden' },
-  progFill: { height: '100%', borderRadius: 3, backgroundColor: colors.primary },
-  progTxt: { fontSize: 12, fontWeight: '800', color: colors.inkSoft, minWidth: 34, textAlign: 'right' },
   segEmo: { fontSize: 13 },
-  // 3-way sticky mode toggle (full-width row under the header)
-  modeRow: { flexDirection: 'row', gap: 6, paddingHorizontal: 15, paddingTop: 6, paddingBottom: 2 },
+  // 3-way mode selector — compact row in the composer, by the skip control
+  modeRow: { flexDirection: 'row', gap: 6, marginBottom: 8 },
   modeSeg: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
     paddingVertical: 8, borderRadius: 11, backgroundColor: colors.bgSoft,

@@ -186,6 +186,13 @@ def pick_skill(db: Session, enrollments: list[Enrollment], respect_cooldown: boo
                           restrict_skill_ids=restrict_skill_ids)
     if not cands:
         return None
+    # Break ties FAIRLY: candidates arrive in a fixed order (enrollment id, then
+    # skill order), so when many skills share a priority - which they do early on,
+    # every fresh skill scores the same - a stable sort would always surface the
+    # same first few (e.g. the first program's first topic) and the softmax would
+    # tunnel there forever. Shuffling first makes equal-priority skills break ties
+    # at random, so interleaving genuinely spreads across programs and topics.
+    random.shuffle(cands)
     scored = [(_priority(s, st, enr, now, _weights(enr)), (s, st, enr))
               for (s, st, enr) in cands]
     return _sample_top_k(scored)
@@ -378,15 +385,17 @@ def ask_question(db: Session, user: User, enrollments: list[Enrollment],
             bank_q = pick_bank_question(db, user.id, skill.id, None)  # any curated for this skill
     if bank_q:
         question, question_id = bank_q.text, bank_q.id
+        eff_mode = bank_q.mode or mode or "short_drill"
     elif policy == "bank_only":
         return None  # no curated question available for any pickable skill
     else:
-        question = generate_question(db, user, skill, mode or "short_drill", enrollment=enr)
+        eff_mode = mode or "short_drill"
+        question = generate_question(db, user, skill, eff_mode, enrollment=enr)
         question_id = None
 
     attempt = Attempt(
         user_id=user.id, enrollment_id=enr.id, skill_id=skill.id,
-        question_id=question_id, source=source, question=question,
+        question_id=question_id, source=source, mode=eff_mode, question=question,
     )
     db.add(attempt)
     db.flush()

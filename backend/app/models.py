@@ -270,6 +270,7 @@ class Attempt(Base):
     question_id: Mapped[int | None] = mapped_column(
         ForeignKey("questions.id", ondelete="SET NULL"), nullable=True)  # set = served from the bank
     source: Mapped[str] = mapped_column(String(20), default="on_demand")  # scheduled | on_demand
+    mode: Mapped[str] = mapped_column(String(20), default="short_drill")  # on_the_go | short_drill | problem
     question: Mapped[str] = mapped_column(Text, default="")
     answer: Mapped[str] = mapped_column(Text, default="")
     verdict: Mapped[str] = mapped_column(String(20), default="")  # "" (open) | correct | partial | wrong

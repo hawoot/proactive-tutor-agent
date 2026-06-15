@@ -245,6 +245,7 @@ class AttemptOut(ORM):
     id: int
     skill_id: int | None
     source: str
+    mode: str = "short_drill"  # the KIND of question this attempt is
     question: str
     answer: str
     verdict: str
