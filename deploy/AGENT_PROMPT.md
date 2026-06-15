@@ -16,8 +16,8 @@ exactly and report the output of each step. Stop and report if any step fails.
    curl --version
 
 2. Get the code (skip clone if the directory already exists):
-   git clone https://github.com/hawoot/proactive-tutor-agent.git ~/proactive-tutor-agent
-   cd ~/proactive-tutor-agent
+   git clone https://github.com/hawoot/proactive-tutor-agent.git /home/node/apps/labib-agent
+   cd /home/node/apps/labib-agent
 
 3. If an old version was running here before (a supervisord or uvicorn process,
    or an old backend/tutor.db from before June 2026): stop any running uvicorn
@@ -49,9 +49,9 @@ exactly and report the output of each step. Stop and report if any step fails.
 ## B. Update to the latest code (after I push changes)
 
 ```
-Update the tutor backend in ~/proactive-tutor-agent. Run exactly:
+Update the tutor backend in /home/node/apps/labib-agent. Run exactly:
 
-cd ~/proactive-tutor-agent
+cd /home/node/apps/labib-agent
 git pull
 bash deploy/container.sh start
 
@@ -67,7 +67,7 @@ improvise - paste me the full error output.
 ## C. Health check / debugging
 
 ```
-Diagnose the tutor backend in ~/proactive-tutor-agent. Run and report ALL of:
+Diagnose the tutor backend in /home/node/apps/labib-agent. Run and report ALL of:
 
 bash deploy/container.sh status
 curl -s localhost:8000/health
@@ -83,7 +83,7 @@ Do not restart or change anything yet - just report the outputs.
 ```
 Back up the tutor database. Run:
 
-cd ~/proactive-tutor-agent/backend
+cd /home/node/apps/labib-agent/backend
 cp tutor.db tutor.backup.$(date +%Y%m%d).db
 ls -la tutor*.db
 
